@@ -1,4 +1,4 @@
-# PulsarX Portfolio web app (Next.js). Node >= 22.5 is required for node:sqlite; 24 has it unflagged.
+# Pulse Risk web app (Next.js). Node >= 22.5 is required for node:sqlite; 24 has it unflagged.
 FROM node:24-bookworm-slim AS deps
 WORKDIR /app
 # Some wallet deps (bufferutil, utf-8-validate) compile native addons. The toolchain stays in this stage.

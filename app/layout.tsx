@@ -4,7 +4,7 @@ import { Providers } from '@/components/Providers';
 import { Shell } from '@/components/Shell';
 
 export const metadata: Metadata = {
-  title: 'PulsarX Portfolio · BNB',
+  title: 'Pulse Risk · BNB',
   description: 'bStocks collateral on BNB Chain, Lighter perps and Derive options, with an agent that hedges and rebalances margin.',
 };
 

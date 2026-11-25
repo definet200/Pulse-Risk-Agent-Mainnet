@@ -1,4 +1,4 @@
-# PulsarX Portfolio on one host (e.g. a Lightsail instance).
+# Pulse Risk · BNB on one host (e.g. a Lightsail instance).
 #   cp .env.example .env              # app secrets + DOMAIN (also used for ${...} below)
 #   cp agent/.env.example agent/.env  # agent settings; AGENT_API_TOKEN must match the app's
 #   docker compose up -d --build

@@ -1,4 +1,4 @@
-# PulsarX Margin Agent — how it works
+# Pulse Risk Margin Agent — how it works
 
 A background service that keeps each user's Lighter and Derive margin safe using money they hold on BNB Chain, and keeps their bStocks hedged. It runs the rules the user set on the app's **Risk management** page. This document describes what is built in `agent/` today.
 
@@ -20,7 +20,7 @@ The LLM can only **narrow** the set of actions (pick one, veto it, or skip). It 
 ## 3. Big picture
 
 ```
-                         ┌──────────────────────── PulsarX app (Next.js + SQLite) ───────────────────────┐
+                         ┌──────────────────────── Pulse Risk app (Next.js + SQLite) ───────────────────────┐
   user (MetaMask) ──────▶│ login · agent keys · rules (Risk mgmt page) · allowance · Activity feed       │
                          └───────▲─────────────────────────────────────────────────▲─────────────────────┘
                                  │ Bearer AGENT_API_TOKEN                            │ events, rule-state
@@ -199,7 +199,7 @@ The fixed 70 / 45 / 25 numbers are only defaults. A separate **risk analyst** pa
 - **Primary source** is chosen by capacity: BNB stables if they can cover the estimated top-up, else bStocks after haircut, else it says no source has capacity. An empty BNB wallet is flagged in the text.
 - **The LLM only explains** (`prompts/risk_analyst.md`): a plain-language structural risk and the reasoning, citing the metrics. It cannot change the numbers.
 - **Fail closed:** volatility or funds unreadable means no proposal. If the existing rule already matches (within 1 point) nothing is proposed. The same numbers are never proposed twice (idempotency key), so a rejected proposal does not nag.
-- **App changes** (small, in `pulsarxbnb-portfolio`): table `agent_proposals`; `POST /api/agent/v1/proposals` (agent token); `GET /api/agent/proposals` and `POST /api/agent/proposals/[id]` (signed-in user only, own wallet only); `components/risk/ProposalCard.tsx` on the Risk management page; shared schema and `applyProposal` in `lib/agent-proposal.ts`. Approving writes the rule (existing caps and cooldown are kept), sets the funding order, turns Automation on and logs "You approved the AI proposal…" in the Activity feed. Rejecting changes nothing.
+- **App changes** (small, in `pulse-risk-bnb`): table `agent_proposals`; `POST /api/agent/v1/proposals` (agent token); `GET /api/agent/proposals` and `POST /api/agent/proposals/[id]` (signed-in user only, own wallet only); `components/risk/ProposalCard.tsx` on the Risk management page; shared schema and `applyProposal` in `lib/agent-proposal.ts`. Approving writes the rule (existing caps and cooldown are kept), sets the funding order, turns Automation on and logs "You approved the AI proposal…" in the Activity feed. Rejecting changes nothing.
 - **Limit:** the executor currently refuses bStock-funded top-ups (see section 14), so a proposal with `bstocks_bnb` as primary source can be approved but will not execute until selling bStocks is wired.
 
 ## 14. What is not done yet

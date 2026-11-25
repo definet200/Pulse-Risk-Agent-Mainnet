@@ -9,7 +9,7 @@ import {
 import type { RiskAccount } from '@/lib/hooks/useRiskAccounts';
 import { Switch, ZoneBar } from './ZoneBar';
 
-// Ported from PulsarX components/risk/rebalance/RuleEditor.tsx. The form edits TEXT (what the user typed);
+// Ported from the original terminal components/risk/rebalance/RuleEditor.tsx. The form edits TEXT (what the user typed);
 // the rule is rebuilt from it on every change, so validation and the live preview always agree.
 
 interface Draft {

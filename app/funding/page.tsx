@@ -77,7 +77,7 @@ function WhereMoneyIs() {
     <div className="panel p-4">
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
         <div className="font-medium">Where your money is</div>
-        <div className="text-xs text-muted">All owned by your MetaMask address. PulsarX never holds funds; it only moves them between your own accounts.</div>
+        <div className="text-xs text-muted">All owned by your MetaMask address. Pulse Risk never holds funds; it only moves them between your own accounts.</div>
       </div>
       <div className="flex flex-wrap gap-2 md:flex-nowrap">
         {box('BNB Chain wallet', 'MetaMask · mainnet', `${fmtUnits(bsc.usdc, 18, 2)} USDC`, 'bStocks collateral + rebalance source')}

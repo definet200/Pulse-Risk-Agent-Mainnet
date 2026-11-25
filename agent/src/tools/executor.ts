@@ -3,6 +3,7 @@ import { config } from '../config';
 import { getDeriveCreds, getLighterCreds, type LighterCreds } from './appApi';
 import * as bsc from './bsc';
 import * as derive from './derive';
+import * as funding from './deriveFunding';
 import { SELL_BUFFER, splitFunding, type SaleLeg } from './funding';
 import * as lighter from './lighter';
 import * as pancake from './pancake';
@@ -71,37 +72,8 @@ async function once(key: string, label: string, fn: () => Promise<string | undef
  */
 export async function fundLighterMain(s: Snapshot, k: string, creds: LighterCreds, usdcBase: bigint, sales: SaleLeg[], out: StepResult[], usdtBase = 0n): Promise<boolean> {
   const agent = bsc.agentAddress(); if (!agent) throw new Error('AGENT_BSC_PRIVATE_KEY is not set');
-  let totalWei = 0n;
-
-  if (usdtBase > 0n) {
-    if (!(await once(`${k}:pullusdt`, 'Pull USDT from user wallet', async () => (await bsc.pullStable('usdt', s.wallet, usdtBase.toString())).txHash, out))) return false;
-    if (!(await once(`${k}:swap`, 'Swap USDT to USDC on PancakeSwap (0.01% pool, 0.5% max slippage)', async () => {
-      const r = await pancake.swapUsdtToUsdc(bsc.baseToBsc(usdtBase.toString()));
-      return `${r.txHash}:${r.usdcOutWei}`;
-    }, out))) return false;
-    totalWei += BigInt((store.getStep(`${k}:swap`)?.ref ?? ':0').split(':')[1] || '0');
-  }
-
-  if (usdcBase > 0n) {
-    if (!(await once(`${k}:pull`, 'Pull USDC from user wallet', async () => (await bsc.pullUsdc(s.wallet, usdcBase.toString())).txHash, out))) return false;
-    totalWei += bsc.baseToBsc(usdcBase.toString());
-  }
-
-  for (const leg of sales) {
-    const h = s.bsc.bstocks.find((b) => b.symbol === leg.symbol);
-    if (!h || h.qty <= 0 || h.value <= 0) { out.push({ step: `sell ${leg.symbol}`, status: 'failed', detail: `${leg.symbol} is not held` }); return false; }
-    // Sell enough that the value after the haircut covers the cash needed, plus a small buffer for slippage.
-    const qty = Math.min(h.qty, h.allowanceQty ?? h.qty, (leg.usd / (1 - s.config.collateral.bstockHaircut)) * SELL_BUFFER / (h.value / h.qty));
-    if (!(qty > 0)) { out.push({ step: `sell ${leg.symbol}`, status: 'failed', detail: 'nothing to sell' }); return false; }
-    const raw = await bsc.rawForUi(leg.symbol, qty);
-    if (!(await once(`${k}:${leg.symbol}:pullb`, `Pull ${leg.symbol} from user wallet`, async () => (await bsc.pullBstock(leg.symbol, s.wallet, raw)).txHash, out))) return false;
-    if (!(await once(`${k}:${leg.symbol}:sell`, `Sell ${leg.symbol} for USDC on PancakeSwap (1% max slippage)`, async () => {
-      const r = await pancake.sellBstockForUsdc(leg.symbol, raw);
-      return `${r.txHash}:${r.usdcOutWei}`;
-    }, out))) return false;
-    totalWei += BigInt((store.getStep(`${k}:${leg.symbol}:sell`)?.ref ?? ':0').split(':')[1] || '0');
-  }
-  if (totalWei <= 0n) { out.push({ step: 'fund Lighter', status: 'failed', detail: 'nothing to bridge' }); return false; }
+  const totalWei = await collectOnAgent(s, k, usdcBase, sales, out, usdtBase);
+  if (totalWei === null) return false;
 
   // One bridge for everything.
   let requestId = '';
@@ -116,6 +88,90 @@ export async function fundLighterMain(s: Snapshot, k: string, creds: LighterCred
     for (let i = 0; i < 40; i++) { const st = await relay.getStatus(requestId); if (st === 'success') return requestId; if (st === 'refund' || st === 'failed') throw new Error(`Relay ${st}`); await sleep(6000); }
     throw new Error('Relay still pending: check status before retrying');
   }, out);
+}
+
+/**
+ * Gather the top-up's USDC on the agent's BSC address: pull USDC, pull + swap USDT, and pull + sell bStocks. Returns the
+ * total BSC USDC (18-dp wei) now held for this move, or null if a step failed. Step keys are unchanged, so moves that
+ * started before this split still resume.
+ */
+async function collectOnAgent(s: Snapshot, k: string, usdcBase: bigint, sales: SaleLeg[], out: StepResult[], usdtBase = 0n): Promise<bigint | null> {
+  let totalWei = 0n;
+
+  if (usdtBase > 0n) {
+    if (!(await once(`${k}:pullusdt`, 'Pull USDT from user wallet', async () => (await bsc.pullStable('usdt', s.wallet, usdtBase.toString())).txHash, out))) return null;
+    if (!(await once(`${k}:swap`, 'Swap USDT to USDC on PancakeSwap (0.01% pool, 0.5% max slippage)', async () => {
+      const r = await pancake.swapUsdtToUsdc(bsc.baseToBsc(usdtBase.toString()));
+      return `${r.txHash}:${r.usdcOutWei}`;
+    }, out))) return null;
+    totalWei += BigInt((store.getStep(`${k}:swap`)?.ref ?? ':0').split(':')[1] || '0');
+  }
+
+  if (usdcBase > 0n) {
+    if (!(await once(`${k}:pull`, 'Pull USDC from user wallet', async () => (await bsc.pullUsdc(s.wallet, usdcBase.toString())).txHash, out))) return null;
+    totalWei += bsc.baseToBsc(usdcBase.toString());
+  }
+
+  for (const leg of sales) {
+    const h = s.bsc.bstocks.find((b) => b.symbol === leg.symbol);
+    if (!h || h.qty <= 0 || h.value <= 0) { out.push({ step: `sell ${leg.symbol}`, status: 'failed', detail: `${leg.symbol} is not held` }); return null; }
+    // Sell enough that the value after the haircut covers the cash needed, plus a small buffer for slippage.
+    const qty = Math.min(h.qty, h.allowanceQty ?? h.qty, (leg.usd / (1 - s.config.collateral.bstockHaircut)) * SELL_BUFFER / (h.value / h.qty));
+    if (!(qty > 0)) { out.push({ step: `sell ${leg.symbol}`, status: 'failed', detail: 'nothing to sell' }); return null; }
+    const raw = await bsc.rawForUi(leg.symbol, qty);
+    if (!(await once(`${k}:${leg.symbol}:pullb`, `Pull ${leg.symbol} from user wallet`, async () => (await bsc.pullBstock(leg.symbol, s.wallet, raw)).txHash, out))) return null;
+    if (!(await once(`${k}:${leg.symbol}:sell`, `Sell ${leg.symbol} for USDC on PancakeSwap (1% max slippage)`, async () => {
+      const r = await pancake.sellBstockForUsdc(leg.symbol, raw);
+      return `${r.txHash}:${r.usdcOutWei}`;
+    }, out))) return null;
+    totalWei += BigInt((store.getStep(`${k}:${leg.symbol}:sell`)?.ref ?? ':0').split(':')[1] || '0');
+  }
+  if (totalWei <= 0n) { out.push({ step: 'fund the top-up', status: 'failed', detail: 'nothing to bridge' }); return null; }
+  return totalWei;
+}
+
+/** Minimum ETH the agent keeps on Ethereum for a Derive deposit (USDC approve + depositToNewSubaccount, about 150k gas). */
+export const MIN_AGENT_ETH_WEI = 300_000_000_000_000n; // 0.0003 ETH
+/** Smallest Derive top-up: $7 must still arrive after Relay's fee for the deposit to be safe. */
+export const DERIVE_TOPUP_MIN_BASE = 8_000_000n;
+
+/**
+ * Derive top-up: collect the funds on BSC, then deriveFunding.fundDeriveSubaccount bridges them to the agent's own
+ * Ethereum address, deposits them into a new subaccount OWNED BY THE USER, and moves them into the rule's subaccount.
+ * Checked BEFORE pulling anything: the agent has ETH for the deposit (otherwise USDC would sit on its Ethereum address).
+ */
+async function topUpDerive(s: Snapshot, c: Candidate, k: string, out: StepResult[]): Promise<StepResult[]> {
+  const rule = c.rule!; const net = s.network;
+  const agentBsc = bsc.agentAddress(); if (!agentBsc) throw new Error('AGENT_BSC_PRIVATE_KEY is not set');
+  const creds = await getDeriveCreds(s.wallet, net);
+  const target = rule.accountRef ? Number(rule.accountRef) : creds.subaccountId;
+  const sub = (await derive.listSubaccounts(net, s.wallet, creds)).find((x) => x.subaccount_id === target);
+  if (!sub) { out.push({ step: 'find the Derive subaccount', status: 'failed', detail: `subaccount ${target} is not yours` }); return out; }
+  if (!sub.manager_id) { out.push({ step: 'find the Derive subaccount', status: 'failed', detail: `subaccount ${target} has no margin manager (fallback); pick a trading subaccount` }); return out; }
+  const gas = await funding.agentEthBalance(net);
+  if (gas < MIN_AGENT_ETH_WEI && !store.getStep(`${k}:deposit`)) {
+    out.push({ step: 'check agent gas on Ethereum', status: 'failed', detail: `the agent's Ethereum address ${funding.agentEthAddress()} has ${Number(gas) / 1e18} ETH; it needs about ${Number(MIN_AGENT_ETH_WEI) / 1e18} ETH to deposit into Derive. Nothing was pulled.` });
+    return out;
+  }
+  // Relay takes its fee from the bridged amount, so a $7 move would land under the $7 deposit floor and get stuck on the
+  // agent's Ethereum address. Refuse below $8 before anything is pulled.
+  if (BigInt(c.amountBaseUnit) < DERIVE_TOPUP_MIN_BASE && !store.getStep(`${k}:bridge`)) {
+    out.push({ step: 'check the top-up size', status: 'failed', detail: `Derive top-ups need at least $${Number(DERIVE_TOPUP_MIN_BASE) / 1e6} (the bridge fee comes off the amount and Derive loses deposits under $5). Nothing was pulled.` });
+    return out;
+  }
+  const sp = splitFunding(c);
+  if (sp.usdcBase < 0n || sp.unsupported.length) { out.push({ step: 'plan funding', status: 'failed', detail: 'funding plan not supported' }); return out; }
+  const totalWei = await collectOnAgent(s, k, sp.sales.length || sp.usdtBase > 0n ? sp.usdcBase : BigInt(c.amountBaseUnit), sp.sales, out, sp.usdtBase);
+  if (totalWei === null) return out;
+  const amountBase = (totalWei / 10n ** 12n).toString(); // BSC USDC is 18 dp; Ethereum/Derive USDC is 6 dp
+  const steps = await funding.fundDeriveSubaccount({
+    n: net, wallet: s.wallet as `0x${string}`, creds, amountBase, managerId: sub.manager_id, targetSubaccountId: target, agentBsc, key: k,
+    isDone: (sk) => { const st = store.getStep(sk); return st?.status === 'done' ? (st.ref ?? true) : undefined; },
+    markDone: (sk, ref) => store.saveStep(sk, 'done', ref),
+  });
+  const LABEL: Record<funding.StepName, string> = { bridge: 'Bridge BSC USDC to the agent on Ethereum (Relay)', bridge_wait: 'Wait for Relay delivery', deposit: 'Deposit into your Derive account (new subaccount, you are the owner)', credit: 'Wait for Derive to credit the deposit', consolidate: `Move it into subaccount ${target}` };
+  for (const st of steps) out.push({ step: LABEL[st.step], status: st.status, detail: st.detail, ref: st.ref });
+  return out;
 }
 
 async function verifyPosition(net: Snapshot['network'], creds: LighterCreds, marketId: number, expected: number, tolerance: number): Promise<string | null> {
@@ -205,9 +261,17 @@ export async function execute(s: Snapshot, c: Candidate): Promise<StepResult[]> 
     return out;
   }
 
-  // Derive paths are intentionally not wired yet: fail closed with a clear step.
-  const why = rule.venue === 'derive' ? new derive.NotWiredError(`Derive ${c.kind}`).message : 'unsupported';
-  void getDeriveCreds;
-  out.push({ step: `${rule.venue} ${c.kind}`, status: 'failed', detail: why });
+  if (c.kind === 'top_up' && rule.venue === 'derive') return topUpDerive(s, c, k, out);
+
+  if (c.kind === 'release' && rule.venue === 'derive') {
+    // Session key, recipient pinned to the owner: released margin lands in the USER's Ethereum wallet (~14 min, ~$1 fee).
+    const creds = await getDeriveCreds(s.wallet, net);
+    const sub = rule.accountRef ? Number(rule.accountRef) : creds.subaccountId;
+    const usd = (BigInt(amount) / 1_000_000n).toString() + '.' + (BigInt(amount) % 1_000_000n).toString().padStart(6, '0');
+    await once(`${k}:withdraw`, 'Derive withdraw to your Ethereum wallet', async () => (await derive.withdrawToOwner(net, s.wallet, creds, sub, usd)).opUuid ?? 'sent', out);
+    return out;
+  }
+
+  out.push({ step: `${rule.venue} ${c.kind}`, status: 'failed', detail: 'unsupported' });
   return out;
 }

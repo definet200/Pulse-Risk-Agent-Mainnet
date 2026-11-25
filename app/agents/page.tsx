@@ -45,7 +45,7 @@ export default function AgentsPage() {
         <h1 className="flex items-center gap-2 text-2xl font-semibold"><KeyRound className="text-accent" />Agent keys</h1>
         <p className="mt-2 max-w-3xl text-sm text-muted leading-relaxed">
           Lighter and Derive each let your wallet approve a separate <b className="text-white">agent key</b> that signs orders for you.
-          MetaMask only signs once to approve it. The key is created and kept encrypted on the PulsarX backend, so the hedging and
+          MetaMask only signs once to approve it. The key is created and kept encrypted on the Pulse Risk backend, so the hedging and
           rebalancing agent can act while you&apos;re away. Its permissions are limited: it can never send funds to anyone but you.
         </p>
         <div className="mt-3 text-xs text-muted">Network: <span className="text-white capitalize">{network}</span> (switch in the sidebar). Keys are per network.</div>

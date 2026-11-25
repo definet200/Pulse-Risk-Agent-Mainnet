@@ -3,7 +3,7 @@
 This guide is for the developer building the **hedging + margin-rebalancing agent**. This app (UI + small backend) owns wallet login, agent-key registration, user rules and the activity log. Your service owns the loop that reads state and calls the venues.
 
 ```
- MetaMask (user) ──signs once──▶ PulsarX backend (this repo)        Your agent service
+ MetaMask (user) ──signs once──▶ Pulse Risk backend (this repo)        Your agent service
    │ BSC: holds USDC + bStocks       • SQLite: encrypted agent keys   ◀─ GET  /api/agent/v1/wallets
    │ grants capped allowance ─┐      • rules (hedge / rebalance)     ◀─ GET  /api/agent/v1/credentials
    │                          │      • activity log                  ◀─ GET  /api/agent/v1/config
@@ -84,7 +84,7 @@ Money is **USDC base units (6 dp) as integer strings**. Percentages are **basis 
 | `limits` | `maxNotionalPerTradeUsd`, `maxNotionalPerDayUsd`, `maxLeverage`, `dailyLossCapUsd`, `maxCapitalOffBnbUsd`, `autonomyExpiresAt`, `killSwitch` (halts new orders and transfers). Only the user changes these; the agent never writes config |
 | `events[]` | Known events `{ticker, at, kind: earnings|corporate_action|halt, gapPct?}` to hedge ahead of |
 | `rebalance.enabled` | Master switch ("Automation on"). Off = rules are saved, but nothing moves |
-| `rebalance.rules[]` | One rule per venue account (same model as PulsarX auto margin rebalancing). See below |
+| `rebalance.rules[]` | One rule per venue account (same model as the original terminal's auto margin rebalancing). See below |
 | `rebalance.sources` | Ordered: `bsc_usdc`, `bsc_usdt`, `sell_bstocks` |
 | `rebalance.sellOrder` | bStocks the agent may sell, in order, when `sell_bstocks` is a source. The user must also allow each bStock to the agent address. A sale is valued after `collateral.bstockHaircut` |
 | `rebalance.keepBscReserveBaseUnit` | Never drain the BNB wallet below this |

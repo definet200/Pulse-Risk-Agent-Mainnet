@@ -9,7 +9,7 @@ const Ctx = createContext<{ network: VenueNetwork; setNetwork: (n: VenueNetwork)
   setNetwork: () => {},
 });
 
-const KEY = 'pulsarx.venueNetwork';
+const KEY = 'pulse-risk.venueNetwork';
 
 export function NetworkProvider({ children }: { children: ReactNode }) {
   const [network, setState] = useState<VenueNetwork>('mainnet');

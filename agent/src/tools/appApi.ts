@@ -3,7 +3,7 @@ import type { RuleState } from '../../../lib/risk-rules';
 import { config } from '../config';
 import type { Network } from '../types';
 
-// Client for the PulsarX app's agent API (docs/AGENT.md). The bearer token is the ONLY secret it needs.
+// Client for the Pulse Risk app's agent API (docs/AGENT.md). The bearer token is the ONLY secret it needs.
 
 export interface WalletEntry {
   wallet: string;
@@ -88,7 +88,7 @@ export function memoryActions() {
       if (dup) return { id: dup.id, duplicate: true, status: dup.status };
       for (const r of rows) if (r.wallet === a.wallet && r.slot === a.slot && r.status === 'pending') r.status = 'superseded';
       const row = { id: next++, wallet: a.wallet, key: a.idempotencyKey, network: a.network, slot: a.slot, status: 'pending' as ActionStatus, kind: a.kind, venue: a.venue, origin: a.origin,
-        title: a.title, why: a.why, helps: a.helps, willDo: a.willDo, detail: a.detail, plan: a.plan ?? null, result_message: null, created_at: Date.now(), decided_at: null, completed_at: null };
+        title: a.title, why: a.why, helps: a.helps, willDo: a.willDo, detail: a.detail, plan: a.plan ?? null, payoff: a.payoff ?? null, alternatives: a.alternatives ?? [], result_message: null, created_at: Date.now(), decided_at: null, completed_at: null };
       rows.push(row); return { id: row.id, duplicate: false, status: 'pending' };
     },
     async list(wallet, _n, status) { return rows.filter((r) => r.wallet === wallet && r.status === status); },

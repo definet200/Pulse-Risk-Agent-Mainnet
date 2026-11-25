@@ -48,6 +48,8 @@ export interface Snapshot {
   heldPuts?: { ticker: string; notionalUsd: number; expiry: string }[];
   /** Free collateral on the Derive subaccount that would pay a put premium. */
   deriveFree?: { ref: string; freeUsd: number };
+  /** EVERY venue account the wallet owns (all Lighter sub-accounts, all Derive subaccounts), read each check. */
+  venueAccounts?: VenueAccount[];
   /** Why a venue could not be used this tick (missing key, outage). Rules on that venue are skipped; other venues still run. */
   venueProblems?: Partial<Record<'lighter' | 'derive', string>>;
   /** Venue order minimums per Lighter market id: minimum size, size step, minimum notional. Orders below are never sent. */
@@ -81,6 +83,8 @@ export interface TodayStats {
   /** Set when the anomaly stop has paused the agent. */
   pausedReason: string | null;
 }
+
+export interface VenueAccount { venue: 'lighter' | 'derive'; id: number; label: string; equityUsd: number; freeUsd: number; main: boolean }
 
 export type CandidateKind = 'top_up' | 'release' | 'hedge';
 

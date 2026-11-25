@@ -1,4 +1,4 @@
-# PulsarX Portfolio · BNB
+# Pulse Risk · BNB
 
 Built for the BNB Bangkok hackathon. It's one portfolio for:
 
@@ -18,7 +18,7 @@ npm test                       # unit tests (planning math, signing codecs, keys
 npm run build
 ```
 
-Node ≥ 22.5 (uses the built-in `node:sqlite`). Data lives in `data/pulsarx.db` (gitignored).
+Node ≥ 22.5 (uses the built-in `node:sqlite`). Data lives in `data/pulse-risk.db` (gitignored).
 
 ## Deploy (Docker, e.g. AWS Lightsail)
 
@@ -46,7 +46,7 @@ HTTPS is required: in production the session cookie is `Secure`. If you have no 
 | `/trade/options` | Derive options chain (ETH, BTC, SOL, HYPE + RWA: NVDA, US500, US100, gold, oil), ticket signed by the session key |
 | `/funding` | BNB → Lighter (Relay, direct to the account index), BNB ↔ Ethereum (Relay), Ethereum → Lighter / Derive direct deposits, testnet faucets |
 | `/agents` | Register the Lighter API key and the Derive session key (MetaMask signs; the key is created and stored encrypted server-side) |
-| `/automation` (Risk management) | KPI strip (health, utilization, liquidation distance), auto margin rebalancing (per-account rules with zone bars, ported from PulsarX), stress test, hedge legs, funding source + agent allowance, activity |
+| `/automation` (Risk management) | KPI strip (health, utilization, liquidation distance), auto margin rebalancing (per-account rules with zone bars, ported from the original terminal), stress test, hedge legs, funding source + agent allowance, activity |
 | `/collateral` | All 26 bStocks, holdings, haircut collateral value |
 | `/docs` | Agent integration guide plus the endpoint references for Lighter, Derive, Relay and bStocks |
 

@@ -1,4 +1,4 @@
-# PulsarX margin agent. Build from the REPO ROOT (it imports ../lib and ../vendor):
+# Pulse Risk margin agent. Build from the REPO ROOT (it imports ../lib and ../vendor):
 #   docker build -f agent/Dockerfile .
 # One image, two roles (see docker-compose.yml):
 #   tick loop:  node --import tsx src/index.ts

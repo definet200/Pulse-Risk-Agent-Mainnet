@@ -132,7 +132,7 @@ export async function finalizeDeriveKey(n: VenueNetwork, wallet: Address, sigs: 
   await deriveRpc(n, 'private/set_session_key', {
     wallet: owner, public_session_key: row.key_ref, expiry_sec: row.expires_at, subaccount_ids: null,
     nonce: meta.setKey.nonce, signer: owner, signature: sigs.setKey, signature_expiry_sec: meta.setKey.expirySec,
-    protocol_scopes: DERIVE_AGENT_SCOPES.map((s) => s.wire), offchain_scopes: ['account_info'], label: 'pulsarx-agent', ip_whitelist: [],
+    protocol_scopes: DERIVE_AGENT_SCOPES.map((s) => s.wire), offchain_scopes: ['account_info'], label: 'pulse-risk-agent', ip_whitelist: [],
   }, headers);
   // Whitelisting the owner lets a withdraw-scoped key pay out to it (testnet once required this).
   let whitelisted = true;
@@ -362,7 +362,7 @@ export async function placeDeriveOrder(n: VenueNetwork, wallet: Address, o: Deri
   return deriveRpc<{ order: { order_id: string; order_status: string; filled_amount: string; average_price: string } }>(n, 'private/order', {
     instrument_name: o.instrument, direction: o.side, amount, limit_price: limitPrice, max_fee: maxFee,
     nonce: action.nonce, signer: key.address, signature, signature_expiry_sec: expirySec, subaccount_id: subaccountId,
-    order_type: o.type, time_in_force: immediate ? 'ioc' : o.postOnly ? 'post_only' : 'gtc', reduce_only: !!o.reduceOnly, label: 'pulsarx',
+    order_type: o.type, time_in_force: immediate ? 'ioc' : o.postOnly ? 'post_only' : 'gtc', reduce_only: !!o.reduceOnly, label: 'pulse-risk',
   }, headers);
 }
 

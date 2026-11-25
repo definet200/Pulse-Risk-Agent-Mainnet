@@ -97,7 +97,8 @@ export function assessRisk(s: Snapshot, now = new Date()): RiskView | null {
     const perpOk = !!leg; const putOk = !!chain && !!(leg || putLeg.get(ticker));
     const pm = proxyMap[ticker]; const vleg = pm ? perpLeg.get(pm.via) : undefined;
     const sigVia = pm ? s.market!.sigmaDay[pm.via] : undefined; const pxVia = pm ? s.proxyPrices?.[pm.via] : undefined;
-    const proxyVia = !perpOk && !putOk && pm && vleg && sigVia && pxVia ? { ticker: pm.via, beta: pm.beta, marketId: vleg.marketId, price: pxVia, sigmaDay: sigVia } : null;
+    // Offered for every name that has one (shown as an alternative); traded only when no perp or put exists (instrument below).
+    const proxyVia = pm && vleg && sigVia && pxVia ? { ticker: pm.via, beta: pm.beta, marketId: vleg.marketId, price: pxVia, sigmaDay: sigVia } : null;
     const unassessed = known === undefined && (perpOk || putOk || !!pm) ? (s.unassessed?.[ticker] ?? 'no volatility or price from the venue feed') : null;
     const heldPutUsd = (s.heldPuts ?? []).filter((p) => p.ticker === ticker && Date.parse(p.expiry) > now.getTime()).reduce((a, p) => a + p.notionalUsd, 0);
     const pos = leg ? (s.lighterPositions[leg.marketId] ?? 0) : 0;

@@ -25,24 +25,40 @@ export function ConnectButton() {
   if (!mounted) return <div className="h-10 w-40" />;
 
   if (!isConnected) {
-    // Prefer MetaMask discovered via EIP-6963; fall back to any discovered wallet, then legacy injected.
-    const mm = connectors.find((c) => c.id === 'io.metamask' || c.id === 'io.metamask.flask');
+    // Every wallet the browser announces (EIP-6963: MetaMask, Trust Wallet, Rabby, ...) is offered; the user picks.
+    // The generic `injected` connector is only a fallback for old wallets that don't announce themselves.
     const discovered = connectors.filter((c) => c.type === 'injected' && c.id !== 'injected');
-    const pick = mm ?? discovered[0] ?? connectors.find((c) => c.id === 'injected');
     const hasLegacy = typeof window !== 'undefined' && !!(window as unknown as { ethereum?: unknown }).ethereum;
-    if (!mm && !discovered.length && !hasLegacy) {
+    const legacy = connectors.find((c) => c.id === 'injected');
+    const wallets = discovered.length ? discovered : hasLegacy && legacy ? [legacy] : [];
+    if (!wallets.length) {
       return (
         <a className="pill bg-white text-black font-medium px-5 py-2.5" href="https://metamask.io/download/" target="_blank" rel="noreferrer">
-          <span className="flex items-center gap-2"><Wallet size={16} />Install MetaMask</span>
+          <span className="flex items-center gap-2"><Wallet size={16} />Install a wallet</span>
         </a>
       );
     }
+    const go = (c: (typeof wallets)[number]) => { setOpen(false); connect({ connector: c, chainId: bsc.id }); };
+    const only = wallets.length === 1 ? wallets[0] : null;
     return (
-      <div className="flex flex-col items-end">
-        <button className="pill bg-white text-black font-medium px-5 py-2.5" disabled={isPending || !pick}
-          onClick={() => pick && connect({ connector: pick, chainId: bsc.id })}>
-          <span className="flex items-center gap-2"><Wallet size={16} />{isPending ? 'Connecting…' : mm ? 'Connect MetaMask' : `Connect ${pick?.name ?? 'wallet'}`}</span>
+      <div className="relative flex flex-col items-end" ref={ref}>
+        <button className="pill bg-white text-black font-medium px-5 py-2.5" disabled={isPending}
+          onClick={() => (only ? go(only) : setOpen((o) => !o))}>
+          <span className="flex items-center gap-2"><Wallet size={16} />{isPending ? 'Connecting…' : only ? `Connect ${only.id === 'injected' ? 'wallet' : only.name}` : 'Connect wallet'}</span>
         </button>
+        {open && !only && (
+          <div className="absolute right-0 top-12 z-50 w-64 panel p-2 shadow-xl">
+            <div className="px-3 py-2 text-xs text-muted">Choose a wallet</div>
+            {wallets.map((c) => (
+              <button key={c.uid} type="button" className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm hover:bg-panel2" onClick={() => go(c)}>
+                {/* Wallet icons are data: URIs announced by the extension (EIP-6963); next/image can't optimise those. */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                {c.icon ? <img src={c.icon} alt="" className="h-6 w-6 rounded-md" /> : <Wallet size={18} className="text-muted" />}
+                <span className="text-white">{c.id === 'injected' ? 'Browser wallet' : c.name}</span>
+              </button>
+            ))}
+          </div>
+        )}
         {error && <span className="mt-1 max-w-xs text-right text-xs text-down">{error.message.split('\n')[0]}</span>}
       </div>
     );

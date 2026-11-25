@@ -141,7 +141,7 @@ export function AutoRebalance({ accounts, rules, states, live, onLive, units, on
           <p><b className="text-white">Where the money comes from.</b> Your BNB wallet, in the order set under Funding: USDC, USDT, then bStocks you allowed it to sell. It only pulls within the allowance you granted, then Relay bridges it to the venue (Lighter directly; Derive via Ethereum).</p>
           <p><b className="text-white">Release surplus.</b> Optional. When the account sits on the other side of the release level for the whole dwell time, the surplus goes back down to the release target, home to your BNB wallet.</p>
           <p><b className="text-white">Every time / Once.</b> Once = one move, then that direction pauses until you press Re-arm. Cooldown stops a second top-up before the first one lands.</p>
-          <p className="text-muted">Rules are executed by the PulsarX agent service. This page shows what it would do right now from live balances.</p>
+          <p className="text-muted">Rules are executed by the Pulse Risk agent service. This page shows what it would do right now from live balances.</p>
         </div>
       )}
 
