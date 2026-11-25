@@ -1,4 +1,5 @@
 import 'server-only';
+import { deriveOrderExpiry } from '@/lib/derive-expiry';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import { getAddress, type Address, type Hex } from 'viem';
 import type { VenueNetwork } from '@/lib/network';
@@ -318,12 +319,21 @@ export async function deriveWithdrawals(n: VenueNetwork, wallet: Address): Promi
 export async function deriveOrderHistory(n: VenueNetwork, wallet: Address, limit = 50): Promise<HistoryRow[]> {
   const owner = getAddress(wallet);
   const { headers } = await agentHeaders(n, owner);
-  const r = await deriveRpc<{ orders?: { creation_timestamp: number; instrument_name: string; direction: 'buy' | 'sell'; order_type: string; amount: string; filled_amount: string; average_price: string; order_status: string; cancel_reason?: string; subaccount_id: number }[] }>(
+  const r = await deriveRpc<{ orders?: { creation_timestamp: number; instrument_name: string; direction: 'buy' | 'sell'; order_type: string; amount: string; filled_amount: string; average_price: string; order_status: string; cancel_reason?: string; subaccount_id: number; order_id?: string }[] }>(
     n, 'private/get_order_history', { wallet: owner, page_size: limit }, headers);
+  // Settlement hash per order: Derive records it on each trade (tx_hash, once settled on chain). A failed read leaves it empty.
+  const hashOf = new Map<string, string>();
+  const subs = [...new Set((r.orders ?? []).filter((o) => Number(o.filled_amount) > 0).map((o) => o.subaccount_id))].slice(0, 8);
+  await Promise.all(subs.map(async (sub) => {
+    try {
+      const t = await deriveRpc<{ trades?: { order_id?: string; tx_hash?: string | null }[] }>(n, 'private/get_trade_history', { subaccount_id: sub, page_size: 100 }, headers);
+      for (const tr of t.trades ?? []) if (tr.order_id && tr.tx_hash && !hashOf.has(tr.order_id)) hashOf.set(tr.order_id, tr.tx_hash);
+    } catch { /* no hashes this time */ }
+  }));
   return (r.orders ?? []).map((o) => ({
     venue: 'derive' as const, time: o.creation_timestamp, market: o.instrument_name, side: o.direction, type: o.order_type,
     size: o.amount, filled: o.filled_amount, avgPrice: Number(o.filled_amount) > 0 ? o.average_price : null,
-    status: o.cancel_reason ? `${o.order_status}:${o.cancel_reason}` : o.order_status, account: `#${o.subaccount_id}`, txHash: null,
+    status: o.cancel_reason ? `${o.order_status}:${o.cancel_reason}` : o.order_status, account: `#${o.subaccount_id}`, txHash: (o.order_id && hashOf.get(o.order_id)) || null,
   })).sort((a, b) => b.time - a.time);
 }
 
@@ -353,8 +363,8 @@ export async function placeDeriveOrder(n: VenueNetwork, wallet: Address, o: Deri
   // Route to the subaccount whose manager trades this instrument's risk universe.
   const subaccountId = await subaccountForUniverse(n, owner, inst.risk_universe_id);
   const immediate = o.type === 'market';
-  // signature_expiry_sec is also the order's expiry; venue window is 1920 s .. 90 d.
-  const expirySec = Math.floor(Date.now() / 1000) + (immediate ? 2_400 : 30 * 86_400);
+  // The order's expiry may not outlive the session key (Derive error 14038).
+  const expirySec = deriveOrderExpiry(immediate, keyRow(owner, n)?.expires_at ?? null);
   const action: ActionFields = { subaccountId, nonce: nextNonce(), module: DERIVE_MODULES.TRADE, expirySec, owner, signer: key.address,
     data: encodeTradeData({ asset: inst.base_asset_address, subId: inst.base_asset_sub_id, limitPrice, amount, maxFee, recipientId: subaccountId, isBid }) };
   const td = actionTypedData(action, n);
