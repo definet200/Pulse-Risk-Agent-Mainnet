@@ -30,6 +30,7 @@ export interface ChatTradeSpec {
 
 export interface LiveQuote { price: number; index: number; notionalUsd: number; costUsd: number }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const PUT = /^([A-Z0-9_]+)-(\d{8})-([0-9_]+)-P$/;
 const r2 = (x: number) => Math.round(x * 100) / 100;
 
@@ -41,9 +42,12 @@ export async function quoteSpec(n: Network, spec: ChatTradeSpec): Promise<LiveQu
     if (spec.amount < inst.minimumAmount) throw new Error(`Derive's minimum for ${spec.instrument} is ${inst.minimumAmount}`);
     const steps = spec.amount / inst.amountStep;
     if (Math.abs(steps - Math.round(steps)) > 1e-6) throw new Error(`Derive trades ${spec.instrument} in steps of ${inst.amountStep}`);
-    const t = await derive.getTicker(n, spec.instrument);
+    // Market makers on Derive's stock options pull quotes for moments (often outside US market hours): read the
+    // book a few times before giving up (live 2026-11-25: one empty read failed an approved order).
+    let t = await derive.getTicker(n, spec.instrument);
+    for (let i = 0; i < 3 && !((spec.side === 'buy' ? t.ask : t.bid) > 0); i++) { await sleep(2_000); t = await derive.getTicker(n, spec.instrument); }
     const price = spec.side === 'buy' ? t.ask : t.bid;
-    if (!(price > 0)) throw new Error(`no live ${spec.side === 'buy' ? 'ask' : 'bid'} on ${spec.instrument} right now`);
+    if (!(price > 0)) throw new Error(`Derive had no ${spec.side === 'buy' ? 'seller' : 'buyer'} quoting ${spec.instrument} for 6 seconds (stock-option quotes come and go, most often outside US market hours). Ask again for a fresh quote`);
     const index = t.index || price;
     return { price, index, notionalUsd: r2(spec.amount * (spec.kind === 'put' ? index : price)), costUsd: spec.kind === 'put' ? r2(spec.amount * price) : 0 };
   }
