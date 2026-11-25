@@ -47,6 +47,18 @@ const DERIVE_REASON: Record<string, string> = {
 const words = (s: string) => s.replace(/^canceled-|^cancelled-/, '').replace(/[-_]/g, ' ');
 
 /** Short status for the table, plus whether it is good (filled), bad (nothing filled) or neutral. */
+/**
+ * Where a transaction can be looked up, per venue (checked live 2026-11-25):
+ * bStocks on BscScan; Lighter fills in Lighter's explorer (app.lighter.xyz/explorer/logs/<hash>, the hash from its
+ * trades API); Derive trades on the Derive chain's Blockscout explorer. null when no explorer is known (Derive testnet).
+ */
+export function txUrl(venue: HistoryVenue, hash: string, network: 'mainnet' | 'testnet' = 'mainnet'): string | null {
+  if (venue === 'bstocks') return `https://bscscan.com/tx/${hash}`;
+  if (venue === 'lighter') return network === 'mainnet' ? `https://app.lighter.xyz/explorer/logs/${hash}` : `https://testnet.app.lighter.xyz/explorer/logs/${hash}`;
+  return network === 'mainnet' ? `https://explorer.derive.xyz/tx/${hash.startsWith('0x') ? hash : `0x${hash}`}` : null;
+}
+export const shortHash = (h: string) => (h.length > 14 ? `${h.slice(0, 8)}…${h.slice(-6)}` : h);
+
 export function statusLabel(r: Pick<HistoryRow, 'venue' | 'status' | 'filled' | 'size'>): { text: string; tone: 'up' | 'down' | 'muted' } {
   const filled = Number(r.filled); const size = Number(r.size);
   const part = filled > 0 && filled < size;
