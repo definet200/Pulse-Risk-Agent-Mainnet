@@ -20,6 +20,22 @@ npm run build
 
 Node ≥ 22.5 (uses the built-in `node:sqlite`). Data lives in `data/pulsarx.db` (gitignored).
 
+## Deploy (Docker, e.g. AWS Lightsail)
+
+`docker-compose.yml` runs four containers: `app` (Next.js), `agent` (tick loop), `agent-chat` (chat API, always a dry run) and `caddy` (HTTPS on 80/443 with automatic Let's Encrypt). Only Caddy is exposed. SQLite data lives in the `app-data` and `agent-data` volumes.
+
+```bash
+bash deploy/lightsail-setup.sh                      # once per instance: Docker + 2 GB swap
+cp .env.example .env                                # secrets + DOMAIN (+ NEXT_PUBLIC_* RPCs, baked in at build)
+cp agent/.env.example agent/.env                    # AGENT_API_TOKEN must equal the app's
+docker compose up -d --build
+docker compose logs -f app agent                    # https://$DOMAIN/api/health → {"db":"ok","lighterSigner":"ok"}
+```
+
+**Without cloning the repo on the server:** `.github/workflows/docker.yml` pushes `ghcr.io/plusarx/pulsarx-app` and `pulsarx-agent` on every push to `main` (or run `deploy/push-images.sh`). On the server, put `deploy/docker-compose.yml`, `.env` and `agent.env` in one folder, `docker login ghcr.io` if the packages are private, then `docker compose pull && docker compose up -d`. To update, run the same two commands. To pin a build, set `TAG=sha-<short>` in `.env`.
+
+HTTPS is required: in production the session cookie is `Secure`. If you have no domain, use `DOMAIN=<static-ip>.sslip.io`. Back up the volumes, because `app-data` holds the encrypted agent keys and losing `KEYSTORE_SECRET` makes them unreadable.
+
 ## What's where
 
 | Page | What it does |
