@@ -8,8 +8,8 @@ import { getDb } from './db';
 interface ActionDb { id: number; network: string; slot: string; payload: string; status: ActionStatus; result_message: string | null; created_at: number; decided_at: number | null; completed_at: number | null }
 const COLS = 'id, network, slot, payload, status, result_message, created_at, decided_at, completed_at';
 const toAction = (r: ActionDb): ActionRow => {
-  const p = JSON.parse(r.payload) as Pick<ActionIn, 'kind' | 'venue' | 'origin' | 'title' | 'why' | 'helps' | 'willDo' | 'detail' | 'plan'>;
-  return { id: r.id, network: r.network, slot: r.slot, status: r.status, kind: p.kind, venue: p.venue, origin: p.origin, title: p.title, why: p.why, helps: p.helps, willDo: p.willDo, detail: p.detail, plan: p.plan ?? null,
+  const p = JSON.parse(r.payload) as Pick<ActionIn, 'kind' | 'venue' | 'origin' | 'title' | 'why' | 'helps' | 'willDo' | 'detail' | 'plan' | 'payoff' | 'alternatives'>;
+  return { id: r.id, network: r.network, slot: r.slot, status: r.status, kind: p.kind, venue: p.venue, origin: p.origin, title: p.title, why: p.why, helps: p.helps, willDo: p.willDo, detail: p.detail, plan: p.plan ?? null, payoff: p.payoff ?? null, alternatives: p.alternatives ?? [],
     result_message: r.result_message, created_at: r.created_at, decided_at: r.decided_at, completed_at: r.completed_at };
 };
 const logEvent = (w: string, n: string, kind: string, venue: string, message: string, payload: unknown, key: string) =>
@@ -28,9 +28,9 @@ export function createAction(a: ActionIn): { id: number | null; duplicate: boole
   const dup = db.prepare('SELECT id, status FROM agent_actions WHERE wallet = ? AND idempotency_key = ?').get(w, a.idempotencyKey) as { id: number; status: ActionStatus } | undefined;
   if (dup) return { id: dup.id, duplicate: true, status: dup.status };
   db.prepare("UPDATE agent_actions SET status = 'superseded', decided_at = ? WHERE wallet = ? AND network = ? AND slot = ? AND status = 'pending'").run(Date.now(), w, a.network, a.slot);
-  const { kind, venue, origin, title, why, helps, willDo, detail, plan } = a;
+  const { kind, venue, origin, title, why, helps, willDo, detail, plan, payoff, alternatives } = a;
   const r = db.prepare('INSERT INTO agent_actions (wallet, network, slot, payload, status, idempotency_key, created_at) VALUES (?,?,?,?,?,?,?)')
-    .run(w, a.network, a.slot, JSON.stringify({ kind, venue, origin, title, why, helps, willDo, detail, plan }), 'pending', a.idempotencyKey, Date.now());
+    .run(w, a.network, a.slot, JSON.stringify({ kind, venue, origin, title, why, helps, willDo, detail, plan, payoff, alternatives }), 'pending', a.idempotencyKey, Date.now());
   logEvent(w, a.network, 'info', venue, `Waiting for your approval: ${title}`, { actionId: Number(r.lastInsertRowid) }, `action-${w}-${a.idempotencyKey}-ask`);
   return { id: Number(r.lastInsertRowid), duplicate: false, status: 'pending' };
 }

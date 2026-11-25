@@ -16,7 +16,7 @@
 //   3. `uiMultiplier()` is present — the BEP-677 / EIP-8056 scaled-UI interface.
 //
 // The impostor fails (1) and (3). Verified 2026-08-19 against BSC mainnet; see
-// pulsarx-protocol/docs/bstocks-onchain-g1-g4-findings.md.
+// the internal bStocks G1-G4 gate findings.
 //
 // ⚠ BEP-677: `balanceOf` is RAW and does not change on a split or dividend reinvestment.
 //    uiAmount = rawAmount * uiMultiplier() / 1e18. Keep raw BigInt wei as the tx amount and

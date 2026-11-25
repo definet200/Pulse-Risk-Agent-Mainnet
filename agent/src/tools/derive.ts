@@ -162,7 +162,7 @@ export async function placeOrder(n: Network, wallet: string, creds: DeriveCreds,
   const r = await rpc<{ order: { order_id: string; order_status: string; filled_amount: string; average_price: string } }>(n, 'private/order', {
     instrument_name: o.instrument, direction: o.side, amount, limit_price: limitPrice, max_fee: maxFee,
     nonce: action.nonce, signer, signature, signature_expiry_sec: expirySec, subaccount_id: subaccountId,
-    order_type: o.type, time_in_force: immediate ? 'ioc' : 'gtc', reduce_only: !!o.reduceOnly, label: 'pulsarx',
+    order_type: o.type, time_in_force: immediate ? 'ioc' : 'gtc', reduce_only: !!o.reduceOnly, label: 'pulse-risk',
   }, headers);
   return { orderId: r.order.order_id, status: r.order.order_status, filled: Number(r.order.filled_amount) || 0, avgPrice: Number(r.order.average_price) || 0 };
 }

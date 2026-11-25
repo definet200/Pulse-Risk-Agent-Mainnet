@@ -1,3 +1,4 @@
+import { clearOptionNames } from '../src/risk/options';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AIMessage, ToolMessage, type BaseMessage } from '@langchain/core/messages';
 import { loadConfig, resetConfigForTests } from '../src/config';
@@ -237,16 +238,18 @@ describe('hedge card data and venue tickers', () => {
     globalThis.fetch = (async (u: string | URL | Request, init?: RequestInit) => {
       const url = String(u);
       if (url.includes('orderBooks')) return new Response(JSON.stringify({ code: 200, order_books: [{ symbol: 'NVDA', market_type: 'perp' }, { symbol: 'ETH', market_type: 'perp' }] }));
-      if (url.includes('get_all_currencies')) return new Response(JSON.stringify({ result: [{ currency: 'ETH' }, { currency: 'BTC' }] }));
-      if (url.includes('get_instruments')) return new Response(JSON.stringify({ result: JSON.parse(String(init?.body)).currency === 'ETH' ? [{ instrument_name: 'ETH-1' }] : [] }));
+      // Derive v3: the live list is get_all_live_instruments (there is no public/get_instruments). Live 2026-11-25 NVDA has options.
+      if (url.includes('get_all_live_instruments')) return new Response(JSON.stringify({ result: ['ETH-20261204-1600-P', 'ETH-20261204-1600-C', 'NVDA-20261204-150-P', 'NVDA-20261211-150-P', 'NVDA-20261204-150-C', 'BNB-PERP'] }));
       return real(u, init);
     }) as typeof fetch;
     try {
-      const m = script([() => ai('', [{ name: 'get_venue_tickers', args: { tickers: ['NVDA', 'ETH'] } }]), (msgs) => ai(`Checked.\nSOURCES: ${idOf(msgs, 'Lighter NVDA')}, ${idOf(msgs, 'Derive ETH')}`)]);
+      clearOptionNames();
+      const m = script([() => ai('', [{ name: 'get_venue_tickers', args: { tickers: ['NVDA', 'ETH', 'MSTR'] } }]), (msgs) => ai(`Checked.\nSOURCES: ${idOf(msgs, 'Lighter NVDA')}, ${idOf(msgs, 'Derive ETH')}`)]);
       const r = await chat(req('Which tickers can I hedge on Lighter and Derive? NVDA, ETH'));
       const facts = toolFacts(m.seen[1]);
-      expect(facts.find((f) => f.label === 'Lighter NVDA')!.value).toMatch(/listed: NVDA/); expect(facts.find((f) => f.label === 'Derive ETH')!.value).toMatch(/1 live option/);
-      expect(facts.find((f) => f.label === 'Derive NVDA')!.value).toMatch(/no live option instruments/);
+      expect(facts.find((f) => f.label === 'Lighter NVDA')!.value).toMatch(/listed: NVDA/); expect(facts.find((f) => f.label === 'Derive ETH')!.value).toMatch(/2 live \(1 puts\)/);
+      expect(facts.find((f) => f.label === 'Derive NVDA')!.value).toMatch(/options listed: 3 live \(2 puts\), expiries 2026-12-04, 2026-12-11/);
+      expect(facts.find((f) => f.label === 'Derive MSTR')!.value).toMatch(/no live options/);
       expect(r.steps.some((s) => s.tool === 'get_venue_tickers')).toBe(true);
     } finally { globalThis.fetch = real; }
   }, 30_000);

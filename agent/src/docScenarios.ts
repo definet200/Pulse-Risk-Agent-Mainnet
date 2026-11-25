@@ -12,7 +12,7 @@ import { clearQuarantine, computeNews, setTextFetcher } from './news';
 import { sampleChain, setOptionsProvider } from './risk/options';
 import type { BscFunds, Snapshot } from './types';
 
-// Runs every row of the "PulsarX BNB - Agent test scenarios" sheet (T, R, F, H, S) through the real agent graph in
+// Runs every row of the "Pulse Risk BNB - Agent test scenarios" sheet (T, R, F, H, S) through the real agent graph in
 // dry-run, deterministic mode (the LLM layer can only choose, veto or explain; it cannot change a number), and writes
 // what the agent did next to what the sheet expects.   npm run doc-scenarios
 const LLM_ON = process.env.LLM === 'on';

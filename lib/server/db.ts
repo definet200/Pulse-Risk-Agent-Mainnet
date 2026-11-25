@@ -10,7 +10,7 @@ let db: DatabaseSync | null = null;
 
 export function getDb(): DatabaseSync {
   if (db) return db;
-  const file = process.env.DB_PATH || path.join(process.cwd(), 'data', 'pulsarx.db');
+  const file = process.env.DB_PATH || path.join(process.cwd(), 'data', 'pulse-risk.db');
   mkdirSync(path.dirname(file), { recursive: true });
   db = new DatabaseSync(file);
   db.exec(`

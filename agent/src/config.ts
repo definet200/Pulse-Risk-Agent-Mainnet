@@ -25,6 +25,8 @@ const Env = z.object({
   LLM_FALLBACK_MODELS: csv,
   LLM_TEMPERATURE: z.coerce.number().min(0).max(2).default(0),
   LLM_TIMEOUT_MS: z.coerce.number().int().min(1000).default(20_000),
+  /** The chat writes long, multi-scenario answers: its model calls get more time than the trading decisions. */
+  CHAT_LLM_TIMEOUT_MS: z.coerce.number().int().min(5000).max(85_000).default(75_000),
   LLM_MAX_RETRIES: z.coerce.number().int().min(0).max(3).default(1),
 
   // Risk-analyst proposals (rules fitted to volatility, latency and leverage). All tunable.

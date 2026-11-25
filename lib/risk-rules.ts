@@ -1,8 +1,8 @@
-// Auto margin rebalancing — rule model, ported from PulsarX terminal-web-app lib/margin-rebalance.ts
+// Auto margin rebalancing — rule model, ported from the original terminal-web-app lib/margin-rebalance.ts
 // (main branch). Pure: no React, no fetch. Money is integer USDC base units (6 dp) as strings, percentages
 // are integer basis points; floats appear only in display helpers.
 //
-// Differences from PulsarX: the funding source is the user's BNB-chain wallet (not a hub "exchange
+// Differences from the original terminal: the funding source is the user's BNB-chain wallet (not a hub "exchange
 // wallet"), and the accounts are Lighter's main account plus every Derive subaccount (one per risk
 // universe). Rules are executed by the external agent; this file is also its reference semantics.
 
@@ -103,7 +103,7 @@ export function formatUsd(base: string | null | undefined): string {
 const usdOf = (b: string | null) => (b === null ? null : Number(BigInt(b)) / 1e6);
 export const minutes = (sec: number) => (sec % 60 === 0 ? `${sec / 60} min` : `${sec}s`);
 
-/** Why a rule can't be saved, or null. Mirrors PulsarX ruleProblem(), mode-aware. */
+/** Why a rule can't be saved, or null. Mirrors the original terminal ruleProblem(), mode-aware. */
 export function ruleProblem(r: RiskRule): string | null {
   if (r.mode === 'utilization') {
     if (r.triggerBps === null || r.targetBps === null) return 'Set both the top-up level and the target level.';
@@ -288,7 +288,7 @@ export function planRule(r: RiskRule, h: AccountHealth, s: RuleState = {}, now =
 
 // ── Account health score (KPI strip) ───────────────────────────────────────
 /**
- * 0–100, same spirit as PulsarX: starts at 100, loses points for margin utilization (linearly, up to
+ * 0–100, same spirit as the original terminal: starts at 100, loses points for margin utilization (linearly, up to
  * 70) and for the nearest liquidation (up to 30 when a position is within 30% of its liq price).
  */
 export function healthScore(utilPct: number | null, liqDistPct: number | null): number {

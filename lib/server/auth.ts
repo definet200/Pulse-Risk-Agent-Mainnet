@@ -20,7 +20,7 @@ export function loginMessage(address: Address, nonce: string, origin: string): s
     `${origin} wants you to sign in with your wallet:`,
     address,
     '',
-    'Sign in to PulsarX Portfolio. This does not send a transaction or cost gas.',
+    'Sign in to Pulse Risk. This does not send a transaction or cost gas.',
     '',
     `Nonce: ${nonce}`,
   ].join('\n');

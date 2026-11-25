@@ -5,7 +5,7 @@ Date: 2026-11-23
 **Tag legend**
 - **[V-doc]** verified in the official docs at docs.lighter.xyz. apidocs.lighter.xyz now 301-redirects there; append `.md` to any page for raw markdown, full index at https://docs.lighter.xyz/llms.txt.
 - **[V-live]** confirmed with a public GET on 2026-11-23.
-- **[V-code]** verified in our code (path given, relative to the `pulsarX/` workspace).
+- **[V-code]** verified in our code (path given, relative to the parent workspace).
 - **[UNVERIFIED]** inferred or not tested.
 
 ---

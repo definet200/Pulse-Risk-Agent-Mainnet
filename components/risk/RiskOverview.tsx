@@ -5,7 +5,7 @@ import { healthScore, planRule, ruleKey, type RiskRule } from '@/lib/risk-rules'
 import type { RiskAccount } from '@/lib/hooks/useRiskAccounts';
 import { fmtUsd } from '@/lib/format';
 
-// KPI strip + spot-shock scenario, after PulsarX components/risk/RiskKpiStrip.tsx and ScenarioForecast.tsx.
+// KPI strip + spot-shock scenario, after the original terminal's components/risk/RiskKpiStrip.tsx and ScenarioForecast.tsx.
 
 function Card({ label, children, hint }: { label: string; children: React.ReactNode; hint?: React.ReactNode }) {
   return (

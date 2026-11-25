@@ -1,4 +1,5 @@
 'use client';
+import { LogoMark } from '@/components/Logo';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useMemo, useState, type ReactNode } from 'react';
@@ -68,8 +69,8 @@ export function Shell({ children }: { children: ReactNode }) {
     <div className="flex min-h-screen">
       <aside className="hidden lg:flex w-60 shrink-0 flex-col gap-1 border-r border-line/60 px-4 py-5 sticky top-0 h-screen">
         <Link href="/" className="mb-6 flex items-center gap-2 px-2 text-xl font-semibold">
-          <span className="grid h-8 w-8 place-items-center rounded-lg bg-accent text-black font-bold">P</span>
-          PulsarX <span className="text-accent text-sm font-medium">BNB</span>
+          <LogoMark size={32} />
+          <span className="whitespace-nowrap">Pulse Risk</span> <span className="text-accent text-sm font-medium">BNB</span>
         </Link>
         <NavLink href="/" active={path === '/'} icon={<Home size={18} />}>Portfolio</NavLink>
         <div className="mt-1 flex items-center gap-3 px-3 py-2.5 text-[15px] text-white"><CandlestickChart size={18} />Trade</div>

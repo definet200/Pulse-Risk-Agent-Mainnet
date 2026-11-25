@@ -11,7 +11,7 @@ For: **Gaurav Bhisikar**, building the agent service. Companion to [Agent integr
 The user's money never leaves the user's own accounts: BNB wallet → their Lighter account / Derive subaccount → back. The agent only signs with keys the user approved and within an allowance the user set.
 
 ```
- User (MetaMask) ──signs once──▶ PulsarX app (UI + backend, this repo)
+ User (MetaMask) ──signs once──▶ Pulse Risk app (UI + backend, this repo)
                                    │  agent keys (encrypted), rules, rule state, activity
                                    ▼  /api/agent/v1/*  (Bearer AGENT_API_TOKEN)
                                AGENT SERVICE (you)

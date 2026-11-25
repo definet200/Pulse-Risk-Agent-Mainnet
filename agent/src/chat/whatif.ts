@@ -1,3 +1,6 @@
+import { alternativesFor } from '../risk/alternatives';
+import type { VenueAlternative } from '../../../lib/agent-action';
+import { payoffForChoice, type Payoff } from '../risk/payoff';
 import { buildGraph } from '../graph';
 import { clearQuarantine, setTextFetcher } from '../news';
 import { installSampleFeeds } from '../sample';
@@ -12,6 +15,10 @@ import type { Snapshot } from '../types';
 export interface WhatIfResult {
   decision: string; outcome: string; reasons: string[]; events: string[];
   card: { title: string; why: string; helps: string; willDo: string[]; plan: Record<string, unknown> | null } | null;
+  /** Profit and loss on the hedged name before and after the chosen hedge (null when nothing is hedged). */
+  payoff?: Payoff | null;
+  /** Every venue considered for the hedge, with why it was or was not used. */
+  alternatives?: VenueAlternative[];
 }
 export interface NewsItem { ticker: string; title: string; source: string; hoursAgo: number }
 
@@ -48,7 +55,7 @@ export function runWhatIf(snapshot: Snapshot, opts: { news?: NewsItem[] } = {}):
       } else decision = out.outcome === 'error' ? `Paused: ${out.note}` : 'No action';
       const row = inbox.rows[0];
       const reasons = [...out.rejected.map((r) => r.reason), ...(out.note ? [out.note] : [])].filter((x, i, a) => x && a.indexOf(x) === i).slice(0, 8);
-      return { decision, outcome: out.outcome, reasons, events: events.slice(0, 8), card: row ? { title: row.title, why: row.why, helps: row.helps, willDo: row.willDo, plan: (row.plan as Record<string, unknown> | null) ?? null } : null };
+      return { decision, outcome: out.outcome, reasons, events: events.slice(0, 8), card: row ? { title: row.title, why: row.why, helps: row.helps, willDo: row.willDo, plan: (row.plan as Record<string, unknown> | null) ?? null } : null, payoff: payoffForChoice(s, c), alternatives: alternativesFor(s, c) };
     } finally { closeStore(); setEventSink(null); if (news.length) { setTextFetcher(); clearQuarantine(); } }
   });
 }

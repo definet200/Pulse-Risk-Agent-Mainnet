@@ -86,7 +86,7 @@ Debug a `14014`: `public/decode_action`, `public/withdraw_debug`, `private/order
 ```json
 {"wallet":OWNER,"public_session_key":AGENT,"expiry_sec":N,"subaccount_ids":null,"nonce":"…","signer":OWNER,
  "signature":"0x…","signature_expiry_sec":N,"protocol_scopes":["trade:all","withdraw","transfer:existing_subaccount","transfer:new_subaccount"],
- "offchain_scopes":["account_info"],"label":"pulsarx-agent","ip_whitelist":[]}
+ "offchain_scopes":["account_info"],"label":"pulse-risk-agent","ip_whitelist":[]}
 ```
 
 Scope codes: 0 admin · 1 withdraw · 2 trade:all · 3–6 trade:orderbook:* · 7–10 trade:rfq:* · 11 transfer:all · 12 transfer:existing_subaccount · 13 transfer:new_subaccount · 14 transfer:different_owner_subaccount · 15 set_session_key · 16 liquidate · 17–22 vault:*. **Never grant 0, 11, 14, 15** (`encodeSetSessionKeyData` throws on them). Expiry: min now+300 s; we use 30 days. Revoke = re-register with expiry ≈ now+301 s.

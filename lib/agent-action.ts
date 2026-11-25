@@ -4,6 +4,19 @@ import { z } from 'zod';
 // and the exact steps it will run on approval. After approving, the agent runs it and reports back (the ack).
 // Shared by the API routes, the UI and the agent service.
 
+/** Profit and loss on the hedged name before and after the hedge, from the agent's payoff model. */
+export const PayoffView = z.object({
+  ticker: z.string().max(12), holdingUsd: z.number(), hedgeLabel: z.string().max(200), costUsd: z.number(), note: z.string().max(400),
+  points: z.array(z.object({ movePct: z.number(), beforeUsd: z.number(), afterUsd: z.number() })).max(40),
+});
+export type PayoffView = z.infer<typeof PayoffView>;
+
+/** Each venue the agent considered for a hedge, and why it was or was not used. */
+export const VenueAlternative = z.object({
+  venue: z.enum(['lighter', 'derive', 'proxy']), instrument: z.string().max(120), status: z.enum(['chosen', 'possible', 'blocked']), why: z.string().max(400),
+});
+export type VenueAlternative = z.infer<typeof VenueAlternative>;
+
 export const ActionIn = z.object({
   wallet: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
   network: z.enum(['mainnet', 'testnet']),
@@ -21,6 +34,9 @@ export const ActionIn = z.object({
   detail: z.record(z.unknown()),
   /** Hedge proposals carry the full plan so the card can show cost, VaR before/after, margin plan and validity. */
   plan: z.lazy(() => HedgePlanView).optional(),
+  /** Hedge requests: the payoff before and after, and every venue considered with why it was or was not used. */
+  payoff: PayoffView.optional(),
+  alternatives: z.array(VenueAlternative).max(6).optional(),
   idempotencyKey: z.string().min(8).max(80),
 });
 export type ActionIn = z.infer<typeof ActionIn>;
@@ -30,7 +46,7 @@ export type ActionStatus = 'pending' | 'approved' | 'rejected' | 'superseded' | 
 export interface ActionRow {
   id: number; network: string; slot: string; status: ActionStatus;
   kind: ActionIn['kind']; venue: ActionIn['venue']; origin: ActionIn['origin'];
-  title: string; why: string; helps: string; willDo: string[]; detail: Record<string, unknown>; plan: HedgePlanView | null;
+  title: string; why: string; helps: string; willDo: string[]; detail: Record<string, unknown>; plan: HedgePlanView | null; payoff: PayoffView | null; alternatives: VenueAlternative[];
   result_message: string | null; created_at: number; decided_at: number | null; completed_at: number | null;
 }
 

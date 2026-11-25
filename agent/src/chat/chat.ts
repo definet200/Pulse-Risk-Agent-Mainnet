@@ -1,3 +1,8 @@
+import type { VenueAlternative } from '../../../lib/agent-action';
+import { tickerOf } from '../risk/market';
+import { payoff, type Payoff } from '../risk/payoff';
+import { quotePut } from '../risk/putQuote';
+import { deriveCurrencyOf, liveOptionNames } from '../risk/options';
 import { AIMessage, HumanMessage, SystemMessage, ToolMessage, type BaseMessage } from '@langchain/core/messages';
 import { tool, type StructuredToolInterface } from '@langchain/core/tools';
 import { ChatOpenAI } from '@langchain/openai';
@@ -17,7 +22,6 @@ import { applyOverrides, Overrides } from './overrides';
 import { DEFAULT_CONFIG } from '../../../lib/agent-config';
 import { runWhatIf, withScratchStore, type WhatIfResult } from './whatif';
 import { lighterGet } from '../tools/lighter';
-import { rpc as deriveRpc } from '../tools/derive';
 
 // The chat agent: a tool-using LangGraph (model -> tools -> model ...). The model decides, per message, whether it needs any tool at all. "Hi"
 // gets a plain reply and no data is read. Questions about the user's money read their portfolio; "what if" questions and portfolios typed in text
@@ -34,17 +38,24 @@ export interface CardView {
   limits: { maxPerTradeUsd: number; maxPerDayUsd: number; maxLeverage: number; dailyLossCapUsd: number; weeklyBudgetPct: number; lossTolerancePct: number };
 }
 export interface Scenario { kind: 'current' | 'mock'; /** the user's real numbers with nothing changed, so an Approve on a matching pending request is real */ live: boolean; view: CardView | null; inputs: string[]; decision: string; outcome: string; reasons: string[]; why: string | null; limitMet: boolean | null;
-  plan: { instrument?: string; sizeUsd?: number; varBeforePct?: number; varAfterPct?: number; limitPct?: number; costUsd?: number; budgetUsd?: number } | null }
+  plan: { instrument?: string; sizeUsd?: number; varBeforePct?: number; varAfterPct?: number; limitPct?: number; costUsd?: number; budgetUsd?: number } | null;
+  /** Profit and loss on the hedged name before and after the recommendation. */
+  payoff: Payoff | null;
+  /** Every venue considered, with why it was or was not used. */
+  alternatives: VenueAlternative[] }
+export interface PutQuoteView { ticker: string; instrument: string; expiry: string; strike: number; contracts: number; ask: number; iv: number; premiumUsd: number; feesUsd: number; coverUsd: number; holdingUsd: number; minContracts: number; oversized: boolean; payoff: Payoff }
 export interface ChatResponse {
   answer: string; cites: Fact[]; unsure: boolean; unsureReason: string | null;
   source: 'live' | null; sourceNote: string | null; steps: Step[]; scenarios: Scenario[];
+  /** Live put quotes priced in this reply, each with its before/after payoff. */
+  quotes?: PutQuoteView[];
   ui: { showPending: boolean; showActivity: boolean }; usedTools: boolean; usedModel: boolean;
 }
 
 /** Money and percentages in a text, as numbers: "$1,500" -> 1500, "$50k" -> 50000, "7.45%" -> 7.45. Only tokens with a $ or % sign count. */
 export function figures(text: string): { raw: string; value: number }[] {
   const out: { raw: string; value: number }[] = [];
-  for (const m of text.matchAll(/(\$)?(\d[\d,]*(?:\.\d+)?)\s?([kKmM])?(%)?/g)) {
+  for (const m of text.matchAll(/(\$)?(\d[\d,]*(?:\.\d+)?)\s?([kKmM](?![A-Za-z]))?(%)?/g)) {
     if (!m[1] && !m[4]) continue;
     let v = Number(m[2].replace(/,/g, '')); if (Number.isNaN(v)) continue;
     if (m[3]) v *= /k/i.test(m[3]) ? 1e3 : 1e6;
@@ -54,7 +65,7 @@ export function figures(text: string): { raw: string; value: number }[] {
 }
 /** Figures in the answer that appear nowhere in the facts, the user's message or the conversation. Rounding to the displayed precision is allowed. */
 export function ungroundedFigures(answer: string, sources: string[]): string[] {
-  const allowed = sources.flatMap((t) => [...t.matchAll(/(\d[\d,]*(?:\.\d+)?)\s?([kKmM])?/g)].map((m) => Number(m[1].replace(/,/g, '')) * (m[2] ? (/k/i.test(m[2]) ? 1e3 : 1e6) : 1))).filter((n) => !Number.isNaN(n));
+  const allowed = sources.flatMap((t) => [...t.matchAll(/(\d[\d,]*(?:\.\d+)?)\s?([kKmM](?![A-Za-z]))?/g)].map((m) => Number(m[1].replace(/,/g, '')) * (m[2] ? (/k/i.test(m[2]) ? 1e3 : 1e6) : 1))).filter((n) => !Number.isNaN(n));
   const near = (a: number, b: number) => Math.abs(a - b) <= Math.max(0.06, Math.abs(b) * 0.005);
   return [...new Set(figures(answer).filter((f) => !allowed.some((n) => near(f.value, n))).map((f) => f.raw))];
 }
@@ -64,7 +75,7 @@ export type ChatModel = (messages: BaseMessage[], tools: StructuredToolInterface
 const realModel: ChatModel = async (messages, tools) => {
   const c = config();
   if (!c.OPENROUTER_API_KEY) throw new Error('OPENROUTER_API_KEY is not set');
-  const llm = new ChatOpenAI({ model: c.LLM_MODEL_ANALYST, apiKey: c.OPENROUTER_API_KEY, temperature: c.LLM_TEMPERATURE, timeout: c.LLM_TIMEOUT_MS, maxRetries: c.LLM_MAX_RETRIES, configuration: { baseURL: c.OPENROUTER_BASE_URL } });
+  const llm = new ChatOpenAI({ model: c.LLM_MODEL_ANALYST, apiKey: c.OPENROUTER_API_KEY, temperature: c.LLM_TEMPERATURE, timeout: Math.max(c.LLM_TIMEOUT_MS, c.CHAT_LLM_TIMEOUT_MS), maxRetries: c.LLM_MAX_RETRIES, configuration: { baseURL: c.OPENROUTER_BASE_URL } });
   return (await llm.bindTools(tools).invoke(messages)) as AIMessage;
 };
 let model: ChatModel = realModel;
@@ -91,7 +102,7 @@ export function setLiveReader(fn?: LiveReader) { readLive = fn ?? realReadLive; 
 
 class Ctx {
   snapshot: Snapshot | null = null; source: 'live' | null = null; sourceNote: string | null = null; blocked: string | null = null;
-  facts: Fact[] = []; steps: Step[] = []; scenarios: Scenario[] = []; ui = { showPending: false, showActivity: false };
+  facts: Fact[] = []; steps: Step[] = []; scenarios: Scenario[] = []; quotes: PutQuoteView[] = []; ui = { showPending: false, showActivity: false };
   constructor(readonly req: ChatRequest) {}
   /** Give every fact a conversation-wide id and return them for the model to read. */
   register(items: { label: string; value: string }[]): Fact[] { const base = this.facts.length; const out = items.map((x, i) => ({ id: `F${base + i + 1}`, label: x.label, value: x.value })); this.facts.push(...out.map((f) => ({ ...f }))); return out; }
@@ -125,7 +136,7 @@ function scenarioOf(kind: 'current' | 'mock', inputs: string[], r: WhatIfResult,
   const p = r.card?.plan as { instrument?: string; sizeUsd?: number; varBeforePct?: number; varAfterPct?: number; limitPct?: number; cost?: { premiumUsd: number; feesUsd: number; weeklyBudgetUsd: number } } | null | undefined;
   return { kind, live, view: viewOf(snap), inputs, decision: r.decision, outcome: r.outcome, reasons: r.reasons, why: r.card?.why ?? null,
     limitMet: p && p.varAfterPct !== undefined && p.limitPct !== undefined ? p.varAfterPct <= p.limitPct + 1e-9 : null,
-    plan: p ? { instrument: p.instrument, sizeUsd: p.sizeUsd, varBeforePct: p.varBeforePct, varAfterPct: p.varAfterPct, limitPct: p.limitPct, costUsd: p.cost ? p.cost.premiumUsd + p.cost.feesUsd : undefined, budgetUsd: p.cost?.weeklyBudgetUsd } : null };
+    plan: p ? { instrument: p.instrument, sizeUsd: p.sizeUsd, varBeforePct: p.varBeforePct, varAfterPct: p.varAfterPct, limitPct: p.limitPct, costUsd: p.cost ? p.cost.premiumUsd + p.cost.feesUsd : undefined, budgetUsd: p.cost?.weeklyBudgetUsd } : null, payoff: r.payoff ?? null, alternatives: r.alternatives ?? [] };
 }
 const usd = (n: number | undefined) => (n === undefined ? 'unknown' : `$${Math.round(n).toLocaleString('en-US')}`);
 function resultFacts(inputs: string[], r: WhatIfResult): { label: string; value: string }[] {
@@ -133,6 +144,8 @@ function resultFacts(inputs: string[], r: WhatIfResult): { label: string; value:
   const f = [{ label: 'Test input', value: `${inputs.join('. ')} (a dry-run test: nothing was sent or saved)` }, { label: 'Test decision', value: `${r.decision} [${r.outcome}]` }];
   if (p) f.push({ label: 'Test plan', value: `${p.instrument ?? ''} ${usd(p.sizeUsd)}; modelled loss ${p.varBeforePct}% to ${p.varAfterPct}% against a ${p.limitPct}% limit; cost ${usd((p.cost?.premiumUsd ?? 0) + (p.cost?.feesUsd ?? 0))} of a ${usd(p.cost?.weeklyBudgetUsd)} weekly budget. Limit ${(p.varAfterPct ?? 99) <= (p.limitPct ?? 0) + 1e-9 ? 'MET' : 'NOT met'}: ${p.varAfterPct}% after against ${p.limitPct}%` });
   if (r.card) f.push({ label: 'Test why', value: r.card.why.slice(0, 600) }, { label: 'Test steps if approved', value: r.card.willDo.join('; ').slice(0, 400) });
+  for (const a of r.alternatives ?? []) f.push({ label: `Venue ${a.status}: ${a.instrument}`, value: a.why });
+  if (r.payoff) { const at = (mv: number) => r.payoff!.points.find((x) => x.movePct === mv); const d = at(-20), u = at(20); if (d && u) f.push({ label: `${r.payoff.ticker} payoff with the hedge`, value: `${r.payoff.hedgeLabel}: at -20% ${d.beforeUsd} before vs ${d.afterUsd} after; at +20% ${u.beforeUsd} vs ${u.afterUsd} (USD); cost ${r.payoff.costUsd}` }); }
   for (const x of r.reasons.slice(0, 4)) f.push({ label: 'Test note', value: x });
   for (const x of r.events.slice(0, 5)) f.push({ label: 'Test event posted', value: x.slice(0, 300) });
   return f;
@@ -179,7 +192,7 @@ function makeTools(ctx: Ctx): StructuredToolInterface[] {
         const s = await ctx.ensureSnapshot(); const o = Overrides.parse(overrides ?? {});
         const { snapshot, applied } = applyOverrides(s, o); const inputs = [`your portfolio with ${applied.length ? applied.join('; ') : 'no changes'}`];
         const r = await withTimeout(runWhatIf(snapshot), 60_000, 'the hedging agent');
-        ctx.steps.push({ tool: 'run_hedging_agent', label: applied.length ? 'Ran the hedging agent with changed values' : 'Ran the hedging agent on your current numbers' }); ctx.scenarios.push(scenarioOf('current', inputs, r, snapshot, applied.length === 0)); if (applied.length === 0 && r.card?.plan) ctx.ui.showPending = true;
+        ctx.steps.push({ tool: 'run_hedging_agent', label: applied.length ? 'Ran the hedging agent with changed values' : 'Ran the hedging agent on your current numbers' }); ctx.scenarios.push(scenarioOf('current', inputs, r, snapshot, applied.length === 0)); if (applied.length === 0) ctx.ui.showPending = true; if (applied.length === 0 && r.card?.plan) ctx.ui.showPending = true;
         return ok(ctx, resultFacts(inputs, r), ctx.sourceNote ?? undefined);
       } catch (e) {
         const msg = e instanceof z.ZodError ? `invalid arguments: ${e.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}` : e instanceof Error ? e.message : String(e);
@@ -199,17 +212,41 @@ function makeTools(ctx: Ctx): StructuredToolInterface[] {
         for (const t of want) { const hit = all.filter((m) => m.symbol.toUpperCase() === t || m.symbol.toUpperCase().startsWith(`${t}-`) || m.symbol.toUpperCase() === `${t}USD`); items.push({ label: `Lighter ${t}`, value: hit.length ? `listed: ${hit.map((m) => `${m.symbol}${m.market_type ? ` (${m.market_type})` : ''}`).join(', ')}` : 'no market with that symbol in the live Lighter market list' }); }
       } catch (e) { items.push({ label: 'Lighter markets', value: `could not be read just now (${e instanceof Error ? e.message : String(e)})` }); }
       try {
-        const cur = await withTimeout(deriveRpc<{ currency: string }[]>('mainnet', 'public/get_all_currencies', {}, {}), 12_000, 'Derive');
-        const names = (Array.isArray(cur) ? cur : []).map((c) => c.currency);
-        if (!want.length) items.push({ label: 'Derive currencies', value: `${names.length} underlyings: ${names.join(', ')}` });
+        // Derive v3 has no public/get_instruments: the live list is public/get_all_live_instruments (names encode
+        // UNDERLYING-YYYYMMDD-STRIKE-C|P). Index ETFs map to Derive's index options (SPY -> US500, QQQ -> US100).
+        const live = await withTimeout(liveOptionNames('mainnet'), 15_000, 'Derive');
+        const per = new Map<string, { n: number; puts: number; exp: Set<string> }>();
+        for (const nm of live) { const m = /^([A-Z0-9_]+)-(\d{8})-[0-9_]+-([CP])$/.exec(nm); if (!m) continue; const e = per.get(m[1]) ?? { n: 0, puts: 0, exp: new Set<string>() }; e.n++; if (m[3] === 'P') e.puts++; e.exp.add(m[2]); per.set(m[1], e); }
+        const listed = [...per.entries()].filter(([, v]) => v.n > 1).sort((a, b) => b[1].n - a[1].n);
+        if (!want.length) items.push({ label: 'Derive option underlyings', value: `${listed.length}: ${listed.map(([k, v]) => `${k} (${v.n} options, ${v.exp.size} expiries)`).join(', ')}` });
         for (const t of want) {
-          let opts = 0;
-          try { const r = await withTimeout(deriveRpc<{ instrument_name: string }[]>('mainnet', 'public/get_instruments', { currency: t, instrument_type: 'option', expired: false }, {}), 12_000, 'Derive'); opts = Array.isArray(r) ? r.length : 0; } catch { /* not listed */ }
-          items.push({ label: `Derive ${t}`, value: opts ? `listed, ${opts} live option instruments` : names.includes(t) ? 'listed as an underlying, no live option instruments returned' : 'no live option instruments with that underlying in the live Derive list' });
+          const ccy = deriveCurrencyOf(t); const v = per.get(ccy);
+          const exps = v ? [...v.exp].sort().slice(0, 4).map((d) => `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6)}`).join(', ') : '';
+          items.push({ label: `Derive ${t}`, value: v && v.n > 1 ? `options listed${ccy !== t ? ` (as ${ccy})` : ''}: ${v.n} live (${v.puts} puts), expiries ${exps}${v.exp.size > 4 ? ', ...' : ''}` : 'no live options with that underlying on Derive' });
         }
       } catch (e) { items.push({ label: 'Derive currencies', value: `could not be read just now (${e instanceof Error ? e.message : String(e)})` }); }
       return ok(ctx, items, 'Read live from the Lighter and Derive public APIs just now.');
     }, { name: 'get_venue_tickers', description: 'List what is actually tradeable right now on Lighter (perp markets) and Derive (option underlyings), read live from both venues. Pass tickers to check specific ones (for example NVDA, XAU, ETH); omit to list everything. Use it when the user asks which tickers or markets exist, or before saying a hedge market is unavailable: never claim a ticker is missing without checking here.', schema: z.object({ tickers: z.array(z.string().max(10)).max(12).optional() }) }),
+
+    tool(async ({ ticker, notionalUsd, strikePct, minDays }: { ticker: string; notionalUsd?: number; strikePct?: number; minDays?: number }) => {
+      const t = ticker.toUpperCase().replace(/B$/, '');
+      ctx.steps.push({ tool: 'price_derive_put', label: `Priced a live ${t} put on Derive` });
+      try {
+        let holdingUsd = 0;
+        try { const s = await ctx.ensureSnapshot(); holdingUsd = s.bsc.bstocks.filter((b) => tickerOf(b.symbol) === t).reduce((a, b) => a + b.value, 0); } catch { /* not signed in: price on the notional given */ }
+        const want = notionalUsd ?? holdingUsd;
+        const q = await withTimeout(quotePut('mainnet', t, { notionalUsd: want, strikePct: strikePct ?? 100, minDays: minDays ?? 7 }), 25_000, 'Derive');
+        if (!q) return ok(ctx, [{ label: `Derive ${t} put`, value: 'no live put with an ask on Derive for that underlying and window' }]);
+        const pay = payoff(t, holdingUsd > 0 ? holdingUsd : q.coverUsd, { kind: 'put', contracts: q.contracts, strike: q.strike, spot: q.spot, premiumUsd: q.premiumUsd, feesUsd: q.feesUsd });
+        ctx.quotes.push({ ticker: t, instrument: q.instrument, expiry: q.expiry, strike: q.strike, contracts: q.contracts, ask: q.ask, iv: q.iv, premiumUsd: q.premiumUsd, feesUsd: q.feesUsd, coverUsd: q.coverUsd, holdingUsd: pay.holdingUsd, minContracts: q.minContracts, oversized: q.oversized, payoff: pay });
+        const at = (m: number) => pay.points.find((p) => p.movePct === m)!;
+        return ok(ctx, [
+          { label: `Derive ${t} put quote`, value: `${q.instrument}: ${q.contracts} contract(s) at the ask $${q.ask} (implied volatility ${Math.round(q.iv * 100)}%, ${q.daysToExpiry} days), covering $${q.coverUsd} of ${t}. Premium $${q.premiumUsd} + fees $${q.feesUsd} = $${(q.premiumUsd + q.feesUsd).toFixed(2)}` },
+          { label: `Derive ${t} put minimum`, value: `Derive trades this put in steps of ${q.step} contract, minimum ${q.minContracts} (= $${q.minCoverUsd} of cover).${q.oversized ? ` Your $${want.toFixed(2)} needs less than that, so the smallest put covers ${Math.round(q.coverUsd / Math.max(want, 0.01))}x what you hold: the premium is the real cost but most of the cover is more than you need.` : ''}` },
+          { label: `${t} payoff with the put`, value: `at -20%: $${at(-20).beforeUsd} unhedged vs $${at(-20).afterUsd} with the put; at 0%: $${at(0).afterUsd} (the cost); at +20%: $${at(20).beforeUsd} vs $${at(20).afterUsd}` },
+        ], 'Priced live from the Derive order book just now; the chat shows the payoff chart.');
+      } catch (e) { return ok(ctx, [{ label: `Derive ${t} put`, value: `could not be priced just now (${e instanceof Error ? e.message : String(e)})` }]); }
+    }, { name: 'price_derive_put', description: "Price a protective put on Derive LIVE for one ticker: reads the order book and returns the instrument, contracts, premium, fees, Derive's minimum size, and the payoff before and after (the chat draws it). Defaults: the user's holding value, an at-the-money strike, the first expiry at least 7 days out. Use whenever the user asks what a put costs or to compare a put with a perp.", schema: z.object({ ticker: z.string().max(10), notionalUsd: z.number().positive().max(10_000_000).optional(), strikePct: z.number().min(50).max(120).optional(), minDays: z.number().min(1).max(45).optional() }) }),
 
     tool(async ({ tickers }: { tickers?: string[] }) => {
       ctx.steps.push({ tool: 'get_market_data', label: 'Looked up market data' });
@@ -288,7 +325,7 @@ export function parseReply(raw: string): { answer: string; sources: string[]; un
 
 export async function chat(req: ChatRequest): Promise<ChatResponse> {
   const ctx = new Ctx(req);
-  const empty = (answer: string, why: string): ChatResponse => ({ answer, cites: [], unsure: true, unsureReason: why, source: ctx.source, sourceNote: ctx.sourceNote, steps: ctx.steps, scenarios: ctx.scenarios, ui: ctx.ui, usedTools: ctx.steps.length > 0, usedModel: false });
+  const empty = (answer: string, why: string): ChatResponse => ({ answer, cites: [], unsure: true, unsureReason: why, source: ctx.source, sourceNote: ctx.sourceNote, steps: ctx.steps, scenarios: ctx.scenarios, quotes: ctx.quotes, ui: ctx.ui, usedTools: ctx.steps.length > 0, usedModel: false });
   if (!modelAvailable()) {
     // No model: the plain summary of the portfolio, labelled as such.
     let s: Snapshot; try { s = await ctx.ensureSnapshot(); } catch (e) { return empty(e instanceof Error ? e.message : String(e), 'No live data was read for this answer.'); }
@@ -314,7 +351,7 @@ export async function chat(req: ChatRequest): Promise<ChatResponse> {
   // Every money figure and percentage must come from the tool results. If the model made one up, ask once more with the offending figures named.
   if (bad.length) {
     try {
-      const r2 = await loop.invoke({ messages: [...messages, new HumanMessage(`Your last answer used figures that are not in the tool results or my message: ${bad.join(', ')}. Any figure about my portfolio must come from a tool that read my live accounts: call the right tool first if you have not, then answer using only figures from the tool results. If they cannot answer it, say so and add an UNSURE line. Do not mention this correction, do not apologise, and do not refer to an earlier answer: reply as if it were your first answer.`)] });
+      const r2 = await loop.invoke({ messages: [...messages, new HumanMessage(`Your last answer used figures that are not in the tool results or my message: ${bad.join(', ')}. Rewrite the answer using only figures from the tool results already above or my message; do NOT call tools you already called (call a new one only if a figure truly needs data you have not read). Leave out a figure you cannot source. If they cannot answer it, say so and add an UNSURE line. Do not mention this correction, do not apologise, and do not refer to an earlier answer: reply as if it were your first answer.`)] });
       parsed = parseReply(text(r2.messages[r2.messages.length - 1] as AIMessage)); bad = check(parsed.answer);
     } catch { /* keep the first answer, it is flagged below */ }
   }
@@ -325,5 +362,5 @@ export async function chat(req: ChatRequest): Promise<ChatResponse> {
   else if (ctx.blocked && !cites.length) unsureReason = 'No live data was read for this answer.';
   else if (usedTools && !cites.length && !unsureReason) unsureReason = 'I could not tie this answer to any of the data I read.';
   return { answer: (parsed.answer.length > 2200 ? `${parsed.answer.slice(0, 2200)}...` : parsed.answer) || 'I have nothing to add.', cites, unsure: !!unsureReason, unsureReason, source: ctx.source, sourceNote: ctx.sourceNote,
-    steps: ctx.steps, scenarios: ctx.scenarios, ui: ctx.ui, usedTools, usedModel: true };
+    steps: ctx.steps, scenarios: ctx.scenarios, quotes: ctx.quotes, ui: ctx.ui, usedTools, usedModel: true };
 }

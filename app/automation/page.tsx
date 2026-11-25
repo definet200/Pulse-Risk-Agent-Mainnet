@@ -78,9 +78,8 @@ export default function RiskPage() {
           {saved && <p className={clsx('mt-1 text-xs', saved.startsWith('Error') ? 'text-down' : 'text-up')}>{saved}</p>}
         </div>
         <ModeToggle mode={cfg.mode} autonomyExpiresAt={cfg.limits.autonomyExpiresAt} onChange={(m) => {
-          const exp = cfg.limits.autonomyExpiresAt;
-          const lapsed = !exp || new Date(exp).getTime() <= Date.now();
-          const limits = m === 'autonomous' && lapsed ? { ...cfg.limits, autonomyExpiresAt: new Date(Date.now() + 24 * 3_600_000).toISOString() } : cfg.limits;
+          // Auto stays on until the user turns it off (no expiry); the kill switch still stops everything.
+          const limits = m === 'autonomous' ? { ...cfg.limits, autonomyExpiresAt: null } : cfg.limits;
           void persist({ ...cfg, mode: m, limits });
         }} />
       </div>

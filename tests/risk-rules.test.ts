@@ -14,7 +14,7 @@ describe('unit conversion', () => {
   it('usd ↔ base units without floats', () => { expect(usdToBaseUnits('$2,000.50')).toBe('2000500000'); expect(usdToBaseUnits('0')).toBeNull(); expect(formatUsd('2000500000')).toBe('$2,000.50'); });
 });
 
-describe('ruleProblem (mirrors PulsarX)', () => {
+describe('ruleProblem (mirrors the original terminal)', () => {
   it('accepts defaults', () => { expect(ruleProblem(util())).toBeNull(); expect(ruleProblem(usdRule())).toBeNull(); });
   it('target must be below trigger', () => { expect(ruleProblem(util({ targetBps: 8000 }))).toMatch(/target must be below/); });
   it('release level below target', () => { expect(ruleProblem(util({ releaseOn: true, releaseLevelBps: 5000 }))).toMatch(/Release level must be below/); });

@@ -2,8 +2,8 @@ import type { Network } from '../types';
 
 // Derive RWA options (spec: "Derive RWA option data the agent needs"). The agent buys PROTECTIVE PUTS on Derive: a put
 // needs no monitoring and caps the loss, which is why the spec prefers it ahead of a binary gap such as earnings.
-// The chain below is the data the agent needs per underlying. The REAL Derive reader is not wired yet (it returns
-// null, so no put is ever offered from live data); tests and the sample mode supply a chain through setOptionsProvider.
+// The chain below is the data the agent needs per underlying, read live from Derive (makeDeriveOptions); tests and
+// the sample mode supply a chain through setOptionsProvider.
 
 export interface PutQuote { strike: number; bid: number; ask: number; iv: number; delta: number; /** contracts quoted at the ask */ size: number }
 export interface OptionExpiry { expiry: string; puts: PutQuote[] }
@@ -23,8 +23,60 @@ export interface OptionChain {
 
 export type OptionsProvider = (network: Network, ticker: string) => Promise<OptionChain | null>;
 
-/** Live Derive reads are not wired yet: no chain means no put is offered. */
-export const realOptions: OptionsProvider = async () => null;
+/** Holdings whose options trade on Derive under another name (index ETFs track the index one for one in %). */
+export const DERIVE_OPTION_CURRENCY: Record<string, string> = { SPY: 'US500', QQQ: 'US100', XAU: 'XAUT', GOLD: 'XAUT' };
+export const deriveCurrencyOf = (ticker: string) => DERIVE_OPTION_CURRENCY[ticker] ?? ticker;
+
+type Rpc = <T>(n: Network, method: string, params: object) => Promise<T>;
+const defaultRpc: Rpc = async <T,>(n: Network, method: string, params: object) => (await import('../tools/derive')).rpc<T>(n, method, params, {});
+let names: { at: number; n: Network; list: string[] } | null = null;
+/** Live Derive option names, e.g. NVDA-20261204-150-P (cached 60 s; ~4,600 names). */
+export async function liveOptionNames(n: Network, rpc: Rpc = defaultRpc, now = Date.now()): Promise<string[]> {
+  if (names && names.n === n && now - names.at < 60_000) return names.list;
+  const r = await rpc<unknown>(n, 'public/get_all_live_instruments', { instrument_type: 'option' });
+  const list = (Array.isArray(r) ? r : []).map((x) => (typeof x === 'string' ? x : (x as { instrument_name?: string }).instrument_name ?? '')).filter(Boolean);
+  names = { at: now, n, list };
+  return list;
+}
+export const clearOptionNames = () => { names = null; };
+
+interface Tick { b?: string; a?: string; A?: string; I?: string; option_pricing?: { i?: string; d?: string; f?: string } | null }
+const PUT = /^([A-Z0-9_]+)-(\d{4})(\d{2})(\d{2})-([0-9_]+)-P$/;
+
+/**
+ * The real Derive reader: puts for the holding's underlying, read live. Expiries from 1 to 45 days out (first 4),
+ * each with bid/ask, the size quoted at the ask, implied volatility and delta from Derive's own pricing.
+ */
+export function makeDeriveOptions(rpc: Rpc = defaultRpc): OptionsProvider {
+  return async (n, ticker) => {
+    const ccy = deriveCurrencyOf(ticker); const now = Date.now();
+    const expiries = new Map<string, number>();
+    for (const nm of await liveOptionNames(n, rpc)) {
+      const m = PUT.exec(nm); if (!m || m[1] !== ccy) continue;
+      const at = Date.UTC(+m[2], +m[3] - 1, +m[4], 8); const days = (at - now) / 86_400_000;
+      if (days >= 1 && days <= 45) expiries.set(`${m[2]}${m[3]}${m[4]}`, at);
+    }
+    const pick = [...expiries.entries()].sort((a, b) => a[1] - b[1]).slice(0, 4);
+    if (!pick.length) return null;
+    let spot = 0; const out: OptionExpiry[] = [];
+    for (const [ymd, at] of pick) {
+      const r = await rpc<{ tickers?: Record<string, Tick> }>(n, 'public/get_tickers', { instrument_type: 'option', currency: ccy, expiry_date: ymd });
+      const puts: PutQuote[] = [];
+      for (const [nm, t] of Object.entries(r?.tickers ?? {})) {
+        const m = PUT.exec(nm); if (!m) continue;
+        const ask = Number(t.a); const bid = Number(t.b);
+        if (!spot && Number(t.I) > 0) spot = Number(t.I);
+        if (!(ask > 0)) continue;   // no ask = nothing to buy
+        puts.push({ strike: Number(m[5].replace('_', '.')), bid: bid > 0 ? bid : 0, ask, iv: Number(t.option_pricing?.i) || 0, delta: Number(t.option_pricing?.d) || 0, size: Number(t.A) || 0 });
+      }
+      if (puts.length) out.push({ expiry: new Date(at).toISOString(), puts: puts.sort((a, b) => a.strike - b.strike) });
+    }
+    if (!out.length || !(spot > 0)) return null;
+    return { ticker, spot, expiries: out, feeFraction: 0.0003, settlement: 'cash', quotesOffHours: true, contractSize: 1 };
+  };
+}
+
+export const realOptions: OptionsProvider = makeDeriveOptions();
 let provider: OptionsProvider = realOptions;
 export const setOptionsProvider = (p?: OptionsProvider) => { provider = p ?? realOptions; };
 export const getChain: OptionsProvider = (n, t) => provider(n, t);

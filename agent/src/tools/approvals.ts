@@ -3,6 +3,8 @@ import { config } from '../config';
 import type { Candidate, Snapshot } from '../types';
 import type { ActionPost } from './appApi';
 import { describeSteps } from './executor';
+import { payoffForChoice } from '../risk/payoff';
+import { alternativesFor } from '../risk/alternatives';
 
 // Builds the confirmation-mode request: WHAT the agent wants to do, WHY, what it HELPS, and the exact steps it
 // will run if the user approves. Plain code (no LLM): the LLM's own reasoning is appended to "why".
@@ -60,6 +62,8 @@ export function buildActionRequest(s: Snapshot, c: Candidate, deciderReason: str
     willDo: describeSteps(s, c).map((x) => x.slice(0, 300)).slice(0, 8),
     detail: { candidateId: c.id, kind: c.kind, ruleKey: c.ruleKey ?? null, amountBaseUnit: c.amountBaseUnit, hedgeMarket: c.hedge?.market ?? null, hedgeKey: c.hedge ? (c.hedge.key ?? `lighter:${c.hedge.marketId}`) : null, hedgeDelta: c.hedge?.deltaToShort ?? null, optionContracts: c.hedge?.option?.contracts ?? null },
     ...(c.plan ? { plan: clampPlan(c.plan) } : {}),
+    // Every hedge request carries its payoff (before/after) and the venues considered with why each was or was not used.
+    ...(c.kind === 'hedge' ? (() => { const po = payoffForChoice(s, c); const alts = alternativesFor(s, c); return { ...(po ? { payoff: po } : {}), ...(alts.length ? { alternatives: alts } : {}) }; })() : {}),
     idempotencyKey: key,
   };
 }

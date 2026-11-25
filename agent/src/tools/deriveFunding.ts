@@ -43,6 +43,13 @@ export function ethAccount() {
 }
 export const agentEthAddress = (): Address | null => { try { return ethAccount().address; } catch { return null; } };
 
+/** The agent's ETH on Ethereum (gas for the Derive deposit). */
+export async function agentEthBalance(n: Network): Promise<bigint> {
+  const url = config().ETH_RPC_URL; if (!url) throw new Error('ETH_RPC_URL is not set');
+  const pub = createPublicClient({ chain: n === 'mainnet' ? mainnet : sepolia, transport: http(url, { timeout: 15_000 }) });
+  return pub.getBalance({ address: ethAccount().address });
+}
+
 export function viemEth(n: Network): EthIo {
   const url = config().ETH_RPC_URL;
   if (!url) throw new Error('ETH_RPC_URL is not set');

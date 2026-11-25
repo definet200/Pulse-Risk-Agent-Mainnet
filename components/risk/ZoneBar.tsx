@@ -2,7 +2,7 @@
 import clsx from 'clsx';
 import type { Meter } from '@/lib/risk-rules';
 
-// Ported from PulsarX components/risk/rebalance/ZoneBar.tsx: one account's meter on a 0..max track,
+// Ported from the original terminal components/risk/rebalance/ZoneBar.tsx: one account's meter on a 0..max track,
 // painted with the rule's zones — top-up (amber) and release (cyan) — the target dashed, the live value as a fill.
 
 const MIN_LABEL_GAP = 0.11;

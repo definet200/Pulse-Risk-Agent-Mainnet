@@ -7,6 +7,8 @@ import { getJson } from '@/lib/hooks/useVenues';
 import { useSession } from '@/lib/session';
 import { useVenueNetwork } from '@/lib/network';
 import type { ActionRow, HedgePlanView } from '@/lib/agent-action';
+import { PayoffChart } from '@/components/agent/PayoffChart';
+import { VenueAlternatives } from '@/components/agent/VenueAlternatives';
 
 type Mode = 'autonomous' | 'confirm';
 
@@ -121,6 +123,8 @@ export function ActionCard() {
               <ol className="list-decimal space-y-0.5 pl-4 text-muted">{a.willDo.map((s, i) => <li key={i}>{s}</li>)}</ol></div>
           </div>
           {a.plan && <PlanBlock p={a.plan} />}
+          {a.payoff && <PayoffChart p={a.payoff} />}
+          {a.alternatives?.length ? <VenueAlternatives alts={a.alternatives} /> : null}
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <button className="btn-primary py-2 text-sm" disabled={busy === a.id} onClick={() => void decide(a.id, 'approve')}><Check size={15} className="mr-1 inline" />Approve</button>
             <button className="rounded-lg border border-line px-4 py-2 text-sm text-muted hover:text-white" disabled={busy === a.id} onClick={() => void decide(a.id, 'reject')}><X size={15} className="mr-1 inline" />Reject</button>
@@ -168,6 +172,8 @@ export function ActionHistory() {
                   <div><div className="label mb-0.5">What it helps</div><p className="text-muted">{a.helps}</p></div>
                   <div><div className="label mb-0.5">Steps</div><ol className="list-decimal pl-4 text-muted">{a.willDo.map((s, i) => <li key={i}>{s}</li>)}</ol></div>
                   {a.plan && <PlanBlock p={a.plan} />}
+                  {a.payoff && <PayoffChart p={a.payoff} />}
+                  {a.alternatives?.length ? <VenueAlternatives alts={a.alternatives} /> : null}
                   {a.result_message && <div><div className="label mb-0.5">Result (agent&apos;s acknowledgement)</div><p className={a.status === 'failed' ? 'text-down' : 'text-up'}>{a.result_message}</p></div>}
                 </div>
               </details>
