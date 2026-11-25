@@ -20,9 +20,9 @@ function Live({ at }: { at: number }) {
 
 function Card({ title, sub, href, children }: { title: string; sub: string; href?: string; children: React.ReactNode }) {
   return (
-    <div className="panel p-5">
+    <div className="panel p-5 pt-6" data-title={title}>
       <div className="mb-4 flex items-start justify-between">
-        <div><div className="font-medium">{title}</div><div className="text-xs text-muted">{sub}</div></div>
+        <div><div className="font-mono text-[11px] uppercase tracking-[0.12em] text-muted">{sub}</div></div>
         {href && <Link href={href} className="text-muted hover:text-white"><ArrowUpRight size={18} /></Link>}
       </div>
       {children}

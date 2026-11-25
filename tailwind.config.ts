@@ -5,16 +5,16 @@ export default {
   theme: {
     extend: {
       colors: {
-        bg: '#0e0f14',
-        panel: '#14151b',
-        panel2: '#1a1c23',
-        line: '#23252e',
+        bg: '#07090d',
+        panel: '#0c0e13',
+        panel2: '#15171e',
+        line: '#21242d',
         muted: '#8a8f9c',
         up: '#00c278',
         down: '#ff5b5b',
         accent: '#f0b90b',
       },
-      fontFamily: { sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'] },
+      fontFamily: { sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'], mono: ['Menlo', '"SF Mono"', 'Consolas', '"DejaVu Sans Mono"', 'ui-monospace', 'monospace'] },
     },
   },
   plugins: [],

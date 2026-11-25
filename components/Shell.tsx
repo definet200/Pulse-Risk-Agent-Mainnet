@@ -24,7 +24,7 @@ const AGENT: Item[] = [
 function NavLink({ href, active, icon, children }: { href: string; active: boolean; icon?: ReactNode; children: ReactNode }) {
   return (
     <Link href={href} className={clsx('flex items-center gap-3 rounded-xl px-3 py-2.5 text-[15px] transition-colors',
-      active ? 'bg-panel2 text-white' : 'text-[#c9ccd6] hover:text-white')}>
+      active ? 'border border-accent/50 bg-accent/[0.07] text-white shadow-[inset_3px_0_0_#f0b90b]' : 'border border-transparent text-[#c9ccd6] hover:border-line hover:text-white')}>
       {icon}{children}
     </Link>
   );
@@ -67,7 +67,7 @@ export function Shell({ children }: { children: ReactNode }) {
   const { network, setNetwork } = useVenueNetwork();
   return (
     <div className="flex min-h-screen">
-      <aside className="hidden lg:flex w-60 shrink-0 flex-col gap-1 border-r border-line/60 px-4 py-5 sticky top-0 h-screen">
+      <aside className="hidden lg:flex w-60 shrink-0 flex-col gap-1 border-r border-line/60 bg-[#06080b]/80 px-4 py-5 sticky top-0 h-screen backdrop-blur">
         <Link href="/" className="mb-6 flex items-center gap-2 px-2 text-xl font-semibold">
           <LogoMark size={32} />
           <span className="whitespace-nowrap">Pulse Risk</span> <span className="text-accent text-sm font-medium">BNB</span>
@@ -76,7 +76,7 @@ export function Shell({ children }: { children: ReactNode }) {
         <div className="mt-1 flex items-center gap-3 px-3 py-2.5 text-[15px] text-white"><CandlestickChart size={18} />Trade</div>
         <div className="ml-5 border-l border-line pl-2 flex flex-col gap-0.5">
           {TRADE.map((i) => (
-            <Link key={i.href} href={i.href} className={clsx('rounded-xl px-3 py-2', path.startsWith(i.match) ? 'bg-panel2 text-white' : 'text-[#c9ccd6] hover:text-white')}>
+            <Link key={i.href} href={i.href} className={clsx('rounded-xl px-3 py-2', path.startsWith(i.match) ? 'border border-accent/50 bg-accent/[0.07] text-white shadow-[inset_3px_0_0_#f0b90b]' : 'border border-transparent text-[#c9ccd6] hover:border-line hover:text-white')}>
               <div className="text-[15px]">{i.label}</div>
               <div className="text-[11px] text-muted">{i.sub}</div>
             </Link>
@@ -86,7 +86,7 @@ export function Shell({ children }: { children: ReactNode }) {
         <div className="mt-1 flex items-center gap-3 px-3 py-2.5 text-[15px] text-white"><Bot size={18} />Agent</div>
         <div className="ml-5 border-l border-line pl-2 flex flex-col gap-0.5">
           {AGENT.map((i) => (
-            <Link key={i.href} href={i.href} className={clsx('rounded-xl px-3 py-2 text-[15px]', path.startsWith(i.match) ? 'bg-panel2 text-white' : 'text-[#c9ccd6] hover:text-white')}>{i.label}</Link>
+            <Link key={i.href} href={i.href} className={clsx('rounded-xl px-3 py-2 text-[15px]', path.startsWith(i.match) ? 'border border-accent/50 bg-accent/[0.07] text-white shadow-[inset_3px_0_0_#f0b90b]' : 'border border-transparent text-[#c9ccd6] hover:border-line hover:text-white')}>{i.label}</Link>
           ))}
         </div>
         <NavLink href="/collateral" active={path.startsWith('/collateral')} icon={<Scale size={18} />}>Collateral</NavLink>

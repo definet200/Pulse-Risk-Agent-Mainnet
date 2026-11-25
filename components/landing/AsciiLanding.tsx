@@ -140,7 +140,7 @@ export function AsciiLanding({ tickers }: { tickers: Ticker[] }) {
           <pre aria-label="Pulse Risk" style={{ fontFamily: 'Menlo, "SF Mono", Consolas, "DejaVu Sans Mono", monospace' }} className="mx-auto inline-block text-left text-[5px] leading-[6px] text-accent drop-shadow-[0_0_12px_rgba(240,185,11,0.35)] min-[420px]:text-[7px] min-[420px]:leading-[8px] sm:text-[11px] sm:leading-[12px] lg:text-[13px] lg:leading-[14px]">
             {pulse.map((r, i) => <div key={`p${i}`}>{r}{'  '}{risk[i]}</div>)}
           </pre>
-          <h1 className="mx-auto mt-6 max-w-2xl text-2xl font-semibold tracking-tight [text-shadow:0_2px_18px_#07090d,0_0_4px_#07090d] sm:text-4xl">
+          <h1 className="no-prompt mx-auto mt-6 max-w-2xl text-2xl font-semibold tracking-tight [text-shadow:0_2px_18px_#07090d,0_0_4px_#07090d] sm:text-4xl">
             Your stocks, perps and options. <span className="text-accent">One pulse.</span>
           </h1>
           <p className="mx-auto mt-3 max-w-2xl rounded-lg bg-[#07090d]/70 px-2 text-sm text-muted sm:text-base">

@@ -1,10 +1,12 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import clsx from 'clsx';
-import { Check, ChevronDown, MessageCircle, Send, Trash2, X } from 'lucide-react';
+import { Check, ChevronDown, Send, Trash2, X } from 'lucide-react';
 import { getJson } from '@/lib/hooks/useVenues';
 import { HedgeCard, Markdown, type CardScenario } from './HedgeCard';
 import { PayoffChart, type PayoffData } from './PayoffChart';
+import { ChatIntro, Working } from './ChatChrome';
+import { LogoMark } from '@/components/Logo';
 import { VenueAlternatives } from './VenueAlternatives';
 import type { VenueAlternative } from '@/lib/agent-action';
 
@@ -72,25 +74,32 @@ export function ChatWidget() {
   return (
     <div className="fixed bottom-20 right-4 z-50 flex flex-col items-end gap-2">
       {open && (
-        <div role="dialog" aria-label="Hedge agent chat" style={{ width: size.w, height: size.h }} className="relative flex max-h-[calc(100vh-6rem)] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-xl border border-line bg-panel shadow-2xl">
+        <div role="dialog" aria-label="Hedge agent chat" style={{ width: size.w, height: size.h }} className="relative flex max-h-[calc(100vh-6rem)] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border border-line bg-[#07090d] shadow-[0_0_60px_rgba(240,185,11,0.10),0_20px_60px_-10px_rgba(0,0,0,0.8)]">
           {/* Drag the top-left corner (or the left / top edge) to resize; the window stays anchored bottom-right. Double-click resets. */}
           <div aria-hidden onPointerDown={startResize('both')} onDoubleClick={resetSize} title="Drag to resize · double-click to reset" className="absolute left-0 top-0 z-10 h-4 w-4 cursor-nwse-resize rounded-br border-b border-r border-line/60 bg-line/30 hover:bg-accent/40" />
           <div aria-hidden onPointerDown={startResize('w')} onDoubleClick={resetSize} className="absolute bottom-4 left-0 top-4 z-10 w-1.5 cursor-ew-resize hover:bg-accent/30" />
           <div aria-hidden onPointerDown={startResize('h')} onDoubleClick={resetSize} className="absolute left-4 right-0 top-0 z-10 h-1.5 cursor-ns-resize hover:bg-accent/30" />
-          <div className="flex items-center justify-between border-b border-line px-3.5 py-2.5">
-            <div><div className="text-sm font-semibold">Pulse</div><div className="text-[11px] text-muted">Hedge agent · {network}</div></div>
+          <div className="flex items-center justify-between border-b border-dashed border-line bg-[radial-gradient(ellipse_at_top_left,rgba(240,185,11,0.08),transparent_60%)] px-4 py-3">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <LogoMark size={26} />
+              <div className="min-w-0">
+                <div className="font-mono text-sm font-semibold tracking-wide text-white">pulse<span className="text-accent">_</span></div>
+                <div className="flex items-center gap-1.5 truncate whitespace-nowrap font-mono text-[10px] uppercase tracking-[0.15em] text-muted"><span className={clsx('h-1.5 w-1.5 rounded-full', busy ? 'animate-pulse bg-accent' : 'bg-up')} />{busy ? 'working' : 'online'} · hedge agent · {network}</div>
+              </div>
+            </div>
             <div className="flex items-center gap-2">
-              <button type="button" onClick={clearChat} disabled={!msgs.length && !busy} title="Clear chat" className="flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[11px] text-muted hover:border-down hover:text-down disabled:opacity-40"><Trash2 size={12} />Clear chat</button>
-              <button type="button" aria-label="Close chat" onClick={() => setOpen(false)} className="text-muted hover:text-white"><X size={16} /></button>
+              <button type="button" onClick={clearChat} disabled={!msgs.length && !busy} title="Clear chat" className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-line px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider text-muted hover:border-down/60 hover:text-down disabled:opacity-30"><Trash2 size={12} />Clear chat</button>
+              <button type="button" aria-label="Close chat" onClick={() => setOpen(false)} className="rounded-full p-1 text-muted hover:bg-white/5 hover:text-white"><X size={16} /></button>
             </div>
           </div>
-          <div className="flex-1 space-y-2 overflow-y-auto p-3">
-            {msgs.length === 0 && <div className="rounded-lg border border-line p-2.5 text-sm">Hi, I am Pulse, the hedging agent. Ask me about your portfolio, markets or hedging, or describe a portfolio and I will test it.</div>}
+          <div className="flex-1 space-y-3 overflow-y-auto p-3.5">
+            {msgs.length === 0 && !busy && <ChatIntro onAsk={(q) => void send(q)} />}
             {msgs.map((m, i) => m.role === 'user'
-              ? <div key={i} className="ml-8 rounded-lg bg-accent/15 px-2.5 py-1.5 text-sm">{m.text}</div>
+              ? <div key={i} className="ml-10 flex gap-2 rounded-xl border border-accent/25 bg-accent/[0.07] px-3 py-2 text-sm"><span className="font-mono text-accent">›</span><span className="min-w-0 flex-1 break-words">{m.text}</span></div>
               : (
-                <div key={i} className="mr-3 rounded-lg border border-line px-2.5 py-1.5 text-sm">
-                  {m.reply && m.reply.steps.length > 0 && <div className="mb-1.5 flex flex-wrap gap-1">{m.reply.steps.map((s, k) => <span key={k} className="rounded-full bg-bg px-2 py-0.5 text-[11px] text-muted">{s.label}</span>)}</div>}
+                <div key={i} className="relative mr-3 rounded-xl border border-line bg-panel px-3 pb-2.5 pt-3.5 text-sm">
+                  <span className="absolute -top-2 left-3 bg-[#07090d] px-1.5 font-mono text-[9px] uppercase tracking-[0.25em] text-accent">┤ pulse ├</span>
+                  {m.reply && m.reply.steps.length > 0 && <div className="mb-2 flex flex-wrap gap-1">{m.reply.steps.map((s, k) => <span key={k} className="rounded-md border border-line bg-bg px-1.5 py-0.5 font-mono text-[10px] text-muted"><span className="text-up">✓</span> {s.label}</span>)}</div>}
                   <Markdown text={m.text} />
                   {m.reply?.unsure && <div className="mt-2 rounded-md bg-yellow-400/10 px-2 py-1 text-xs text-yellow-400">Not sure: {m.reply.unsureReason}</div>}
                   {m.reply?.quotes?.map((q) => (
@@ -141,18 +150,20 @@ export function ChatWidget() {
                       <ul className="mt-1 space-y-1">{m.reply.cites.map((c) => <li key={c.id}><span className="text-white">{c.label}:</span> {c.value}</li>)}{m.reply.cites.length === 0 && <li>No specific data was cited.</li>}</ul>
                     </details>)}
                 </div>))}
-            {busy && <div className="mr-3 rounded-lg border border-line px-2.5 py-1.5 text-sm text-muted">Thinking...</div>}
+            {busy && <Working />}
             <div ref={end} />
           </div>
-          <form onSubmit={(e) => { e.preventDefault(); void send(text); }} className="m-2.5 flex items-center gap-2 rounded-full border border-line px-3 py-1">
-            <input value={text} onChange={(e) => setText(e.target.value)} disabled={busy} placeholder="Ask the agent" maxLength={1200} className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted" />
-            <button type="submit" disabled={busy || !text.trim()} aria-label="Send" className="flex h-6 w-6 items-center justify-center rounded-full border border-accent text-accent disabled:opacity-40"><Send size={12} /></button>
+          <form onSubmit={(e) => { e.preventDefault(); void send(text); }} className="m-3 mt-1 flex items-center gap-2 rounded-xl border border-line bg-panel px-3 py-2 transition focus-within:border-accent focus-within:shadow-[0_0_0_3px_rgba(240,185,11,0.10)]">
+            <span className="font-mono text-sm text-accent">$</span>
+            <input value={text} onChange={(e) => setText(e.target.value)} disabled={busy} placeholder={busy ? 'pulse is working…' : 'ask pulse anything — hedge, price a put, place a trade'} maxLength={1200} className="min-w-0 flex-1 bg-transparent font-mono text-[13px] caret-accent outline-none placeholder:text-muted/70" />
+            <button type="submit" disabled={busy || !text.trim()} aria-label="Send" className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent text-black transition hover:brightness-110 disabled:bg-line disabled:text-muted"><Send size={13} /></button>
           </form>
         </div>
       )}
       <button type="button" aria-label={open ? 'Close hedge agent chat' : 'Open hedge agent chat'} aria-expanded={open} onClick={() => setOpen((o) => !o)}
-        className={clsx('flex items-center gap-2 rounded-full border px-3.5 py-2 text-sm font-semibold shadow-lg transition', open ? 'border-line bg-panel text-white' : 'border-accent bg-accent text-black hover:brightness-110')}>
-        <MessageCircle size={16} />Ask agent<ChevronDown size={15} className={clsx('transition-transform', !open && 'rotate-180')} />
+        className={clsx('group flex items-center gap-2 rounded-full border py-1.5 pl-1.5 pr-3.5 text-sm font-semibold shadow-[0_8px_30px_rgba(240,185,11,0.25)] transition', open ? 'border-line bg-[#07090d] text-white' : 'border-accent/60 bg-[#07090d] text-white hover:border-accent')}>
+        <span className="relative"><LogoMark size={26} />{!open && <span className="absolute -right-0.5 -top-0.5 h-2 w-2 animate-pulse rounded-full bg-up ring-2 ring-[#07090d]" />}</span>
+        <span className="font-mono">ask pulse</span><ChevronDown size={15} className={clsx('text-muted transition-transform', !open && 'rotate-180')} />
       </button>
     </div>
   );
