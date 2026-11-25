@@ -3,13 +3,13 @@ import Link from 'next/link';
 import { OrderHistory } from '@/components/trade/OrderHistory';
 import { useEffect, useState } from 'react';
 import clsx from 'clsx';
-import { ArrowUpRight, Bot, Wallet } from 'lucide-react';
+import { ArrowUpRight, Bot } from 'lucide-react';
 import { usePortfolio } from '@/lib/hooks/usePortfolio';
 import { useBStockTickers } from '@/lib/hooks/useBStockTickers';
 import { useAgentKeys } from '@/lib/hooks/useVenues';
 import { useVenueNetwork } from '@/lib/network';
 import { fmtNum, fmtPct, fmtUsd } from '@/lib/format';
-import { ConnectButton } from '@/components/ConnectButton';
+import { AsciiLanding } from '@/components/landing/AsciiLanding';
 
 function Live({ at }: { at: number }) {
   const [now, setNow] = useState(Date.now());
@@ -47,24 +47,7 @@ export default function PortfolioPage() {
   const { network } = useVenueNetwork();
   const keyFor = (v: string) => keys.data?.find((k) => k.venue === v && k.network === network && k.status === 'active');
 
-  if (!p.address) {
-    return (
-      <div className="mx-auto mt-16 max-w-2xl text-center">
-        <div className="mx-auto mb-6 grid h-16 w-16 place-items-center rounded-2xl bg-accent/15 text-accent"><Wallet size={30} /></div>
-        <h1 className="text-3xl font-semibold">One portfolio: bStocks, perps and options</h1>
-        <p className="mt-3 text-muted">Hold tokenized stocks on BNB Chain as collateral. Trade Lighter perps and Derive options. An agent hedges your bStocks and keeps perp margin topped up from BNB.</p>
-        <div className="mt-8 flex justify-center"><ConnectButton /></div>
-        <div className="mt-12 grid grid-cols-2 gap-3 text-left sm:grid-cols-4">
-          {(tickers.data ?? []).slice(0, 8).map((t) => (
-            <Link key={t.symbol} href={`/trade/spot/${t.symbol}`} className="panel p-3 hover:border-accent/40">
-              <div className="text-sm">{t.symbol}</div><div className="num text-lg">{fmtNum(t.price)}</div>
-              <div className={clsx('num text-xs', (t.changePct ?? 0) >= 0 ? 'text-up' : 'text-down')}>{fmtPct(t.changePct)}</div>
-            </Link>
-          ))}
-        </div>
-      </div>
-    );
-  }
+  if (!p.address) return <AsciiLanding tickers={tickers.data ?? []} />;
 
   const allPositions = [
     ...p.lighter.positions.map((x) => ({ venue: 'Lighter', name: `${x.symbol}-PERP`, side: x.sign > 0 ? 'Long' : 'Short', size: x.position, value: +x.position_value, pnl: +x.unrealized_pnl })),

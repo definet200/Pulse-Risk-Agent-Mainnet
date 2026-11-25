@@ -40,10 +40,10 @@ function MarketSearch() {
   }, [q]);
   return (
     <div className="relative w-full max-w-xl">
-      <div className="flex items-center gap-3 rounded-full bg-panel border border-line px-5 py-2.5">
+      <div className="flex items-center gap-3 rounded-full bg-panel border border-line px-4 py-2.5 sm:px-5">
         <Search size={18} className="text-muted" />
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search bStocks, perps, options…"
-          className="w-full bg-transparent outline-none text-sm placeholder:text-muted" />
+          className="w-full min-w-0 bg-transparent outline-none text-sm placeholder:text-muted" />
       </div>
       {results.length > 0 && (
         <div className="absolute z-50 mt-2 w-full panel p-1 shadow-xl">
@@ -102,8 +102,8 @@ export function Shell({ children }: { children: ReactNode }) {
         </div>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-40 flex items-center gap-4 bg-bg/90 backdrop-blur px-6 py-4">
-          <div className="flex-1 flex justify-center"><MarketSearch /></div>
+        <header className="sticky top-0 z-40 flex items-center gap-2 bg-bg/90 px-3 py-3 backdrop-blur sm:gap-4 sm:px-6 sm:py-4">
+          <div className="flex min-w-0 flex-1 justify-center"><MarketSearch /></div>
           {network === 'testnet' && <span className="pill bg-accent/15 text-accent text-xs">Venues: testnet</span>}
           <ConnectButton />
         </header>

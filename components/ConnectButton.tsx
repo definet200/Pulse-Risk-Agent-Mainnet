@@ -4,6 +4,7 @@ import { useAccount, useConnect, useDisconnect, useSwitchChain } from 'wagmi';
 import { bsc } from 'wagmi/chains';
 import { Wallet, LogOut, ShieldCheck } from 'lucide-react';
 import { shortAddr } from '@/lib/format';
+import { WalletPicker } from '@/components/WalletPicker';
 import { useSession } from '@/lib/session';
 
 export function ConnectButton() {
@@ -17,7 +18,8 @@ export function ConnectButton() {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => setMounted(true), []);
   useEffect(() => {
-    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    // Clicks inside the wallet picker (rendered on <body>, outside this element) must not count as outside clicks.
+    const h = (e: MouseEvent) => { const t = e.target as Element; if (t.closest?.('[data-wallet-picker]')) return; if (ref.current && !ref.current.contains(t)) setOpen(false); };
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
   }, []);
@@ -46,19 +48,7 @@ export function ConnectButton() {
           onClick={() => (only ? go(only) : setOpen((o) => !o))}>
           <span className="flex items-center gap-2"><Wallet size={16} />{isPending ? 'Connecting…' : only ? `Connect ${only.id === 'injected' ? 'wallet' : only.name}` : 'Connect wallet'}</span>
         </button>
-        {open && !only && (
-          <div className="absolute right-0 top-12 z-50 w-64 panel p-2 shadow-xl">
-            <div className="px-3 py-2 text-xs text-muted">Choose a wallet</div>
-            {wallets.map((c) => (
-              <button key={c.uid} type="button" className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm hover:bg-panel2" onClick={() => go(c)}>
-                {/* Wallet icons are data: URIs announced by the extension (EIP-6963); next/image can't optimise those. */}
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                {c.icon ? <img src={c.icon} alt="" className="h-6 w-6 rounded-md" /> : <Wallet size={18} className="text-muted" />}
-                <span className="text-white">{c.id === 'injected' ? 'Browser wallet' : c.name}</span>
-              </button>
-            ))}
-          </div>
-        )}
+        {open && !only && <WalletPicker wallets={wallets} pending={isPending} onPick={go} onClose={() => setOpen(false)} />}
         {error && <span className="mt-1 max-w-xs text-right text-xs text-down">{error.message.split('\n')[0]}</span>}
       </div>
     );

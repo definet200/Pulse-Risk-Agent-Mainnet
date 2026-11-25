@@ -37,3 +37,6 @@ body { font-feature-settings: 'tnum' 1; }
 .md th { background: #1a1c23; }
 .md a { color: #f0b90b; text-decoration: underline; }
 .md strong { color: #fff; }
+
+/* Landing ticker tape: two copies side by side, shifted by one copy width. */
+@keyframes tape { from { transform: translateX(0); } to { transform: translateX(-50%); } }
