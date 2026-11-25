@@ -1,0 +1,39 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: dark; }
+html, body { background: #0e0f14; color: #e8eaf0; }
+body { font-feature-settings: 'tnum' 1; }
+.num { font-variant-numeric: tabular-nums; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-thumb { background: #2a2d37; border-radius: 6px; }
+.panel { @apply bg-panel rounded-2xl border border-line; }
+.pill { @apply rounded-full px-4 py-1.5 text-sm transition-colors; }
+.pill-on { @apply bg-panel2 text-white; }
+.pill-off { @apply text-muted hover:text-white; }
+.input { @apply w-full rounded-xl bg-panel2 border border-line px-4 py-3 text-base outline-none focus:border-accent/60 num; }
+.btn { @apply rounded-xl px-4 py-3 font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed; }
+.btn-primary { @apply btn bg-white text-black hover:bg-white/90; }
+.btn-ghost { @apply btn bg-panel2 hover:bg-line text-white; }
+.btn-buy { @apply btn bg-up/20 text-up hover:bg-up/30; }
+.btn-sell { @apply btn bg-down/20 text-down hover:bg-down/30; }
+.label { @apply text-xs text-muted; }
+.th { @apply text-left text-xs font-normal text-muted py-2 px-3; }
+.td { @apply py-2.5 px-3 text-sm num; }
+
+/* rendered markdown */
+.md { font-size: 14px; line-height: 1.65; overflow-wrap: anywhere; }
+.md h1 { font-size: 1.6rem; font-weight: 600; margin: 0 0 .75rem; }
+.md h2 { font-size: 1.25rem; font-weight: 600; margin: 1.75rem 0 .6rem; padding-top: .75rem; border-top: 1px solid #23252e; }
+.md h3 { font-size: 1.05rem; font-weight: 600; margin: 1.25rem 0 .4rem; }
+.md p, .md ul, .md ol { margin: .5rem 0; color: #c9ccd6; }
+.md ul { list-style: disc; padding-left: 1.25rem; } .md ol { list-style: decimal; padding-left: 1.25rem; }
+.md code { background: #1a1c23; padding: .1rem .35rem; border-radius: 4px; font-size: 12.5px; }
+.md pre { background: #0e0f14; border: 1px solid #23252e; padding: .9rem; border-radius: 10px; overflow-x: auto; margin: .75rem 0; }
+.md pre code { background: none; padding: 0; }
+.md table { display: block; overflow-x: auto; border-collapse: collapse; margin: .75rem 0; font-size: 13px; }
+.md th, .md td { border: 1px solid #23252e; padding: .35rem .6rem; text-align: left; vertical-align: top; }
+.md th { background: #1a1c23; }
+.md a { color: #f0b90b; text-decoration: underline; }
+.md strong { color: #fff; }

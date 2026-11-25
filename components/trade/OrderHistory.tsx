@@ -1,0 +1,66 @@
+'use client';
+import { useQuery } from '@tanstack/react-query';
+import clsx from 'clsx';
+import { useVenueNetwork } from '@/lib/network';
+import { useSession } from '@/lib/session';
+import { getJson } from '@/lib/hooks/useVenues';
+import { statusLabel, type HistoryRow, type HistoryVenue } from '@/lib/order-history';
+
+const VENUE_LABEL: Record<HistoryVenue, string> = { lighter: 'Lighter', derive: 'Derive', bstocks: 'bStocks' };
+const num = (s: string | null, max = 6) => (s === null || s === '' ? '—' : Number(s).toLocaleString('en-US', { maximumFractionDigits: max }));
+const when = (t: number) => new Date(t).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+export function useOrderHistory(venue: HistoryVenue, on = true) {
+  const { network } = useVenueNetwork();
+  const { wallet } = useSession();
+  return useQuery({
+    queryKey: ['order-history', venue, venue === 'bstocks' ? 'mainnet' : network, wallet], enabled: !!wallet && on, refetchInterval: 15_000,
+    queryFn: async () => (await getJson<{ rows: HistoryRow[] }>(`/api/trade/history?venue=${venue}&network=${network}`)).rows,
+  });
+}
+
+/** Past orders for one venue (or several, merged newest first, for the Portfolio activity list). */
+export function OrderHistory({ venues, limit = 30, showVenue = false }: { venues: HistoryVenue[]; limit?: number; showVenue?: boolean }) {
+  const { wallet } = useSession();
+  const lighter = useOrderHistory('lighter', venues.includes('lighter'));
+  const derive = useOrderHistory('derive', venues.includes('derive'));
+  const bstocks = useOrderHistory('bstocks', venues.includes('bstocks'));
+  const qs = ([['lighter', lighter], ['derive', derive], ['bstocks', bstocks]] as const).filter(([v]) => venues.includes(v)).map(([v, q]) => ({ v, q }));
+  if (!wallet) return <p className="py-6 text-center text-sm text-muted">Sign in to see your past orders.</p>;
+  const rows = qs.flatMap(({ q }) => q.data ?? []).sort((a, b) => b.time - a.time).slice(0, limit);
+  const loading = qs.some(({ q }) => q.isLoading);
+  const errors = qs.filter(({ q }) => q.error).map(({ v, q }) => `${VENUE_LABEL[v]}: ${(q.error as Error).message}`);
+  return (
+    <div>
+      {errors.map((e) => <p key={e} className="mb-2 rounded-lg bg-down/10 px-3 py-2 text-xs text-down">{e}</p>)}
+      {loading && !rows.length ? <p className="py-6 text-center text-sm text-muted">Loading…</p>
+        : !rows.length ? <p className="py-6 text-center text-sm text-muted">No past orders yet.{venues.includes('bstocks') ? ' bStock swaps appear here once you trade on Spot.' : ''}</p>
+        : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead><tr>{['Time', ...(showVenue ? ['Venue'] : []), 'Market', 'Side', 'Size', 'Filled', 'Avg price', 'Status'].map((h) => <th key={h} className="th whitespace-nowrap">{h}</th>)}</tr></thead>
+              <tbody>
+                {rows.map((r, i) => {
+                  const st = statusLabel(r);
+                  return (
+                    <tr key={`${r.venue}-${r.time}-${i}`} className="border-t border-line/60">
+                      <td className="td whitespace-nowrap text-muted">{when(r.time)}</td>
+                      {showVenue && <td className="td">{VENUE_LABEL[r.venue]}</td>}
+                      <td className="td whitespace-nowrap">{r.market}{r.account && r.venue !== 'bstocks' ? <span className="ml-1 text-[11px] text-muted">{r.account}</span> : null}</td>
+                      <td className={clsx('td', r.side === 'buy' ? 'text-up' : 'text-down')}>{r.venue === 'bstocks' ? (r.side === 'buy' ? 'Buy' : 'Sell') : r.side === 'buy' ? 'Long / buy' : 'Short / sell'}</td>
+                      <td className="td num">{num(r.size)}</td>
+                      <td className="td num">{num(r.filled)}</td>
+                      <td className="td num">{r.avgPrice ? num(r.avgPrice, 2) : '—'}{r.venue === 'bstocks' && r.account ? <span className="ml-1 text-[11px] text-muted">{r.account}</span> : null}</td>
+                      <td className={clsx('td text-xs', st.tone === 'up' ? 'text-up' : st.tone === 'down' ? 'text-down' : 'text-muted')}>
+                        {st.text}{r.txHash && <a className="ml-1 underline" target="_blank" rel="noreferrer" href={`https://bscscan.com/tx/${r.txHash}`}>tx ↗</a>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+    </div>
+  );
+}

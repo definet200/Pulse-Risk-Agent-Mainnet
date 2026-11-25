@@ -1,0 +1,152 @@
+'use client';
+import Link from 'next/link';
+import { OrderHistory } from '@/components/trade/OrderHistory';
+import { useEffect, useState } from 'react';
+import clsx from 'clsx';
+import { ArrowUpRight, Bot, Wallet } from 'lucide-react';
+import { usePortfolio } from '@/lib/hooks/usePortfolio';
+import { useBStockTickers } from '@/lib/hooks/useBStockTickers';
+import { useAgentKeys } from '@/lib/hooks/useVenues';
+import { useVenueNetwork } from '@/lib/network';
+import { fmtNum, fmtPct, fmtUsd } from '@/lib/format';
+import { ConnectButton } from '@/components/ConnectButton';
+
+function Live({ at }: { at: number }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
+  if (!at) return null;
+  return <span className="flex items-center gap-1.5 text-xs text-muted"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-up" />Live · updated {Math.max(0, Math.round((now - at) / 1000))}s ago</span>;
+}
+
+function Card({ title, sub, href, children }: { title: string; sub: string; href?: string; children: React.ReactNode }) {
+  return (
+    <div className="panel p-5">
+      <div className="mb-4 flex items-start justify-between">
+        <div><div className="font-medium">{title}</div><div className="text-xs text-muted">{sub}</div></div>
+        {href && <Link href={href} className="text-muted hover:text-white"><ArrowUpRight size={18} /></Link>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function Row({ k, v, cls }: { k: string; v: React.ReactNode; cls?: string }) {
+  return <div className="flex justify-between py-1 text-sm"><span className="text-muted">{k}</span><span className={clsx('num', cls)}>{v}</span></div>;
+}
+
+function Usage({ pct }: { pct: number | null }) {
+  if (pct === null) return null;
+  const color = pct > 70 ? 'bg-down' : pct > 45 ? 'bg-accent' : 'bg-up';
+  return <div className="mt-2"><div className="mb-1 flex justify-between text-xs"><span className="text-muted">Margin used</span><span className="num">{pct.toFixed(1)}%</span></div><div className="h-1.5 rounded-full bg-panel2"><div className={clsx('h-1.5 rounded-full', color)} style={{ width: `${pct}%` }} /></div></div>;
+}
+
+export default function PortfolioPage() {
+  const p = usePortfolio();
+  const tickers = useBStockTickers();
+  const keys = useAgentKeys();
+  const { network } = useVenueNetwork();
+  const keyFor = (v: string) => keys.data?.find((k) => k.venue === v && k.network === network && k.status === 'active');
+
+  if (!p.address) {
+    return (
+      <div className="mx-auto mt-16 max-w-2xl text-center">
+        <div className="mx-auto mb-6 grid h-16 w-16 place-items-center rounded-2xl bg-accent/15 text-accent"><Wallet size={30} /></div>
+        <h1 className="text-3xl font-semibold">One portfolio: bStocks, perps and options</h1>
+        <p className="mt-3 text-muted">Hold tokenized stocks on BNB Chain as collateral. Trade Lighter perps and Derive options. An agent hedges your bStocks and keeps perp margin topped up from BNB.</p>
+        <div className="mt-8 flex justify-center"><ConnectButton /></div>
+        <div className="mt-12 grid grid-cols-2 gap-3 text-left sm:grid-cols-4">
+          {(tickers.data ?? []).slice(0, 8).map((t) => (
+            <Link key={t.symbol} href={`/trade/spot/${t.symbol}`} className="panel p-3 hover:border-accent/40">
+              <div className="text-sm">{t.symbol}</div><div className="num text-lg">{fmtNum(t.price)}</div>
+              <div className={clsx('num text-xs', (t.changePct ?? 0) >= 0 ? 'text-up' : 'text-down')}>{fmtPct(t.changePct)}</div>
+            </Link>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  const allPositions = [
+    ...p.lighter.positions.map((x) => ({ venue: 'Lighter', name: `${x.symbol}-PERP`, side: x.sign > 0 ? 'Long' : 'Short', size: x.position, value: +x.position_value, pnl: +x.unrealized_pnl })),
+    ...p.derive.positions.map((x) => ({ venue: 'Derive', name: x.instrument_name, side: +x.amount >= 0 ? 'Long' : 'Short', size: x.amount, value: +x.mark_value, pnl: +x.unrealized_pnl })),
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div className="panel flex flex-wrap items-end justify-between gap-4 p-6">
+        <div>
+          <div className="label mb-1">Total portfolio value</div>
+          <div className="num text-4xl font-semibold">{fmtUsd(p.total)}</div>
+          <div className="mt-2"><Live at={p.updatedAt} /></div>
+        </div>
+        <div className="flex flex-wrap gap-8 text-sm">
+          <div><div className="label">BNB wallet (stables)</div><div className="num text-lg">{fmtUsd((p.bsc.usdc ?? 0) + (p.bsc.usdt ?? 0))}</div></div>
+          <div><div className="label">bStocks</div><div className="num text-lg">{fmtUsd(p.stocksValue)}</div></div>
+          <div><div className="label">Lighter</div><div className="num text-lg">{fmtUsd(p.lighter.equity ?? 0)}</div></div>
+          <div><div className="label">Derive</div><div className="num text-lg">{fmtUsd(p.derive.equity ?? 0)}</div></div>
+        </div>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-4">
+        <Card title="BNB Chain wallet" sub="MetaMask · BSC mainnet" href="/funding">
+          <Row k="USDC" v={fmtNum(p.bsc.usdc)} cls="text-lg" />
+          <Row k="USDT" v={fmtNum(p.bsc.usdt)} />
+          <Row k="BNB (gas)" v={fmtNum(p.bsc.bnb, 5)} />
+        </Card>
+        <Card title="bStocks collateral" sub={`${p.stocks.length} positions · ${(p.haircut * 100).toFixed(0)}% haircut`} href="/collateral">
+          <Row k="Market value" v={fmtUsd(p.stocksValue)} cls="text-lg" />
+          <Row k="Collateral value" v={fmtUsd(p.stocksCollateral)} cls="text-accent" />
+          <p className="mt-2 text-xs text-muted">Reserve the agent can sell to top up perp margin.</p>
+        </Card>
+        <Card title="Lighter · Perps" sub={network === 'testnet' ? 'testnet' : 'mainnet'} href="/trade/perps">
+          {p.lighter.state === 'unavailable' ? (
+            <div className="rounded-lg bg-accent/10 px-3 py-2 text-xs text-accent">
+              Lighter {network} is not responding right now, so balances can&apos;t be read. Your funds are unaffected; they reappear here when Lighter is back.
+            </div>
+          ) : p.lighter.state === 'no_account' ? <p className="text-sm text-muted">No account yet. <Link href="/funding" className="text-accent">Deposit →</Link></p> : <>
+            <Row k="Equity" v={fmtUsd(p.lighter.equity)} cls="text-lg" />
+            <Row k="Available" v={fmtUsd(p.lighter.available)} />
+            <Usage pct={p.lighter.usage} />
+          </>}
+          <AgentBadge ok={!!keyFor('lighter')} />
+        </Card>
+        <Card title="Derive · Options" sub={network === 'testnet' ? 'testnet' : 'mainnet'} href="/trade/options">
+          {p.derive.state === 'no_account' ? <p className="text-sm text-muted">No account yet. <Link href="/funding" className="text-accent">Deposit →</Link></p>
+            : p.derive.state === 'needs_agent' || p.derive.state === 'signed_out' ? <p className="text-sm text-muted">Register the Derive agent to read balances.</p> : <>
+              <Row k="Equity" v={fmtUsd(p.derive.equity)} cls="text-lg" />
+              <Usage pct={p.derive.usage} />
+            </>}
+          <AgentBadge ok={!!keyFor('derive')} />
+        </Card>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="panel p-4">
+          <div className="mb-2 flex items-center justify-between"><span className="font-medium">bStock holdings</span><Link href="/trade/spot/NVDAB" className="text-xs text-accent">Trade →</Link></div>
+          <table className="w-full"><thead><tr>{['Asset', 'Qty', 'Price', 'Value', '24h', 'Collateral'].map((h) => <th key={h} className="th">{h}</th>)}</tr></thead><tbody>
+            {p.stocks.map((s) => <tr key={s.symbol}><td className="td">{s.symbol}</td><td className="td">{fmtNum(s.qty, 4)}</td><td className="td">{fmtNum(s.price)}</td><td className="td">{fmtUsd(s.value)}</td>
+              <td className={clsx('td', (s.changePct ?? 0) >= 0 ? 'text-up' : 'text-down')}>{fmtPct(s.changePct)}</td><td className="td text-accent">{fmtUsd(s.collateral)}</td></tr>)}
+            {!p.stocks.length && <tr><td colSpan={6} className="td text-muted">No bStocks held yet.</td></tr>}
+          </tbody></table>
+        </div>
+        <div className="panel p-4">
+          <div className="mb-2 font-medium">Derivatives positions</div>
+          <table className="w-full"><thead><tr>{['Venue', 'Market', 'Side', 'Size', 'Value', 'uPnL'].map((h) => <th key={h} className="th">{h}</th>)}</tr></thead><tbody>
+            {allPositions.map((x) => <tr key={x.venue + x.name}><td className="td text-muted">{x.venue}</td><td className="td">{x.name}</td><td className={clsx('td', x.side === 'Long' ? 'text-up' : 'text-down')}>{x.side}</td>
+              <td className="td">{x.size}</td><td className="td">{fmtUsd(x.value)}</td><td className={clsx('td', x.pnl >= 0 ? 'text-up' : 'text-down')}>{fmtUsd(x.pnl)}</td></tr>)}
+            {!allPositions.length && <tr><td colSpan={6} className="td text-muted">No open perps or options.</td></tr>}
+          </tbody></table>
+        </div>
+      </div>
+
+      <div className="panel p-4">
+        <div className="mb-2 flex items-center justify-between"><span className="font-medium">Activity</span><span className="text-xs text-muted">Past orders on Lighter, Derive and bStocks, newest first</span></div>
+        <OrderHistory venues={['lighter', 'derive', 'bstocks']} limit={25} showVenue />
+      </div>
+    </div>
+  );
+}
+
+function AgentBadge({ ok }: { ok: boolean }) {
+  return <Link href="/agents" className={clsx('mt-3 flex items-center gap-1.5 text-xs', ok ? 'text-up' : 'text-muted')}><Bot size={13} />{ok ? 'Agent key active' : 'No agent key'}</Link>;
+}
