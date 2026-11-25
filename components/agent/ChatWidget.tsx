@@ -3,21 +3,34 @@ import { useEffect, useRef, useState } from 'react';
 import clsx from 'clsx';
 import { Check, ChevronDown, MessageCircle, Send, X } from 'lucide-react';
 import { getJson } from '@/lib/hooks/useVenues';
-import { HedgeCard, Markdown, type CardScenario } from './HedgeCard';
+import { useSession } from '@/lib/session';
 
 // A compact "Ask agent" dropdown at the bottom right of every page. The agent decides what it needs: a greeting gets a plain reply, a question about
 // your money reads your portfolio, a "what if" or a portfolio you type runs the real hedging agent on those numbers. When something waits for you it
 // shows Approve and Decline here; in autonomous mode it shows what the agent has been doing. The chat itself never trades.
 const usd = (n: number | null | undefined, dp = 0) => (n === null || n === undefined ? '-' : `$${n.toLocaleString('en-US', { maximumFractionDigits: dp })}`);
 interface Fact { id: string; label: string; value: string }
-type Scenario = CardScenario;
+interface Scenario { kind: 'current' | 'mock'; inputs: string[]; decision: string; outcome: string; reasons: string[]; why: string | null; limitMet: boolean | null; plan: { instrument?: string; sizeUsd?: number; varBeforePct?: number; varAfterPct?: number; limitPct?: number; costUsd?: number; budgetUsd?: number } | null }
 interface Pending { id: number; title: string; why: string; helps: string; willDo: string[]; plan: { cost?: { premiumUsd: number; feesUsd: number }; varBeforePct?: number; varAfterPct?: number; limitPct?: number; instrument?: string; sizeUsd?: number; marginPlan?: { moveUsd: number; from: string; to: string } | null } | null }
 interface Activity { actions: { id: number; status: string; title: string; created_at: number }[]; events: { id: number; kind: string; status: string | null; message: string; created_at: number }[] }
 interface Reply { answer: string; cites: Fact[]; unsure: boolean; unsureReason: string | null; source: 'live' | null; sourceNote: string | null; steps: { tool: string; label: string }[]; scenarios: Scenario[]; usedTools: boolean; pending: Pending[]; activity: Activity | null }
 interface Msg { role: 'user' | 'agent'; text: string; reply?: Reply; decided?: Record<number, string> }
 const ago = (t: number) => { const s = Math.max(0, Math.round((Date.now() - t) / 1000)); return s < 90 ? `${s}s ago` : s < 5400 ? `${Math.round(s / 60)} min ago` : s < 172800 ? `${Math.round(s / 3600)}h ago` : `${Math.round(s / 86400)}d ago`; };
 
+function ScenarioCard({ s }: { s: Scenario }) {
+  return (
+    <div className="mt-2 rounded-lg border border-accent/40 bg-bg p-2.5 text-xs">
+      <div className="mb-1 font-semibold text-accent">{s.kind === 'mock' ? 'Test on a mock portfolio' : 'Test on your portfolio'} (nothing sent or saved)</div>
+      <ul className="list-disc pl-4 text-muted">{s.inputs.map((i) => <li key={i}>{i}</li>)}</ul>
+      <div className="mt-1.5 text-sm font-semibold">{s.decision}</div>
+      {s.plan && <div className="mt-1 text-muted">{s.plan.instrument} {usd(s.plan.sizeUsd)}. Modelled loss {s.plan.varBeforePct}% to {s.plan.varAfterPct}% (limit {s.plan.limitPct}%{s.limitMet !== null ? `, ${s.limitMet ? 'met' : 'NOT met'}` : ''}). Cost {usd(s.plan.costUsd, 2)} of {usd(s.plan.budgetUsd)} budget.</div>}
+      {!s.plan && s.reasons[0] && <div className="mt-1 text-muted">{s.reasons[0]}</div>}
+    </div>
+  );
+}
+
 export function ChatWidget() {
+  const { wallet, signIn } = useSession();
   const network = 'mainnet' as const;
   const [open, setOpen] = useState(false); const [msgs, setMsgs] = useState<Msg[]>([]); const [text, setText] = useState(''); const [busy, setBusy] = useState(false); const [deciding, setDeciding] = useState<number | null>(null);
   const end = useRef<HTMLDivElement>(null);
@@ -49,6 +62,7 @@ export function ChatWidget() {
             <div><div className="text-sm font-semibold">Pulse</div><div className="text-[11px] text-muted">Hedge agent · {network}</div></div>
             <button type="button" aria-label="Close chat" onClick={() => setOpen(false)} className="text-muted hover:text-white"><X size={16} /></button>
           </div>
+          {!wallet && <div className="bg-yellow-400/10 px-3.5 py-1.5 text-[11px] text-yellow-400">Not signed in: I can only answer about your money from your live mainnet accounts. <button type="button" onClick={() => void signIn()} className="underline">Sign in</button></div>}
           <div className="flex-1 space-y-2 overflow-y-auto p-3">
             {msgs.length === 0 && <div className="rounded-lg border border-line p-2.5 text-sm">Hi, I am Pulse, the hedging agent. Ask me about your portfolio, markets or hedging, or describe a portfolio and I will test it.</div>}
             {msgs.map((m, i) => m.role === 'user'
@@ -56,15 +70,10 @@ export function ChatWidget() {
               : (
                 <div key={i} className="mr-3 rounded-lg border border-line px-2.5 py-1.5 text-sm">
                   {m.reply && m.reply.steps.length > 0 && <div className="mb-1.5 flex flex-wrap gap-1">{m.reply.steps.map((s, k) => <span key={k} className="rounded-full bg-bg px-2 py-0.5 text-[11px] text-muted">{s.label}</span>)}</div>}
-                  <Markdown text={m.text} />
+                  <p className="whitespace-pre-wrap">{m.text}</p>
                   {m.reply?.unsure && <div className="mt-2 rounded-md bg-yellow-400/10 px-2 py-1 text-xs text-yellow-400">Not sure: {m.reply.unsureReason}</div>}
-                  {m.reply?.scenarios.map((s, k) => {
-                    const match = s.live && s.plan ? (m.reply!.pending.find((p) => p.plan?.instrument === s.plan?.instrument) ?? (m.reply!.pending.length === 1 ? m.reply!.pending[0] : undefined)) : undefined;
-                    return <HedgeCard key={k} s={s} pending={match} result={match ? m.decided?.[match.id] : undefined} busy={match ? deciding === match.id : false}
-                      onApprove={(id) => void decide(i, id, 'approve')} onDecline={(id) => (id === null ? undefined : void decide(i, id, 'reject'))}
-                      onEdit={(size) => void send(`Re-run that hedge on ${s.plan?.instrument ?? 'the same instrument'} with a size of $${size}`)} />;
-                  })}
-                  {m.reply?.pending.filter((p) => !m.reply!.scenarios.some((s) => s.live && s.plan && (s.plan.instrument === p.plan?.instrument || m.reply!.pending.length === 1))).map((p) => (
+                  {m.reply?.scenarios.map((s, k) => <ScenarioCard key={k} s={s} />)}
+                  {m.reply?.pending.map((p) => (
                     <div key={p.id} className="mt-2 rounded-lg border border-accent/50 bg-bg p-2.5 text-xs">
                       <div className="mb-0.5 text-[11px] font-semibold uppercase tracking-wide text-accent">Waiting for your approval</div>
                       <div className="text-sm font-semibold">{p.title}</div>

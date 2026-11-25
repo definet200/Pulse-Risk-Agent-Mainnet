@@ -15,9 +15,7 @@ import { buildFacts, type Fact, type Recorded } from './facts';
 import { buildMockSnapshot, describeMock, MARKETS, MockPortfolio } from './mock';
 import { applyOverrides, Overrides } from './overrides';
 import { DEFAULT_CONFIG } from '../../../lib/agent-config';
-import { runWhatIf, withScratchStore, type WhatIfResult } from './whatif';
-import { lighterGet } from '../tools/lighter';
-import { rpc as deriveRpc } from '../tools/derive';
+import { runWhatIf, type WhatIfResult } from './whatif';
 
 // The chat agent: a tool-using LangGraph (model -> tools -> model ...). The model decides, per message, whether it needs any tool at all. "Hi"
 // gets a plain reply and no data is read. Questions about the user's money read their portfolio; "what if" questions and portfolios typed in text
@@ -27,13 +25,7 @@ import { rpc as deriveRpc } from '../tools/derive';
 
 export interface ChatRequest { wallet: string; network: 'mainnet' | 'testnet'; message: string; history: { role: 'user' | 'agent'; text: string }[]; recorded: Recorded }
 export interface Step { tool: string; label: string }
-/** What the hedge card shows in its Home and Limits tabs, built by code from the numbers the test ran on. */
-export interface CardView {
-  portfolioUsd: number; hedgedPct: number; requiredHedgePct: number; varPct: number; limitPct: number; mode: 'autonomous' | 'confirm'; killSwitch: boolean;
-  holdings: { ticker: string; usd: number; hedgedPct: number }[]; nextEvent: { ticker: string; kind: string; inHours: number } | null;
-  limits: { maxPerTradeUsd: number; maxPerDayUsd: number; maxLeverage: number; dailyLossCapUsd: number; weeklyBudgetPct: number; lossTolerancePct: number };
-}
-export interface Scenario { kind: 'current' | 'mock'; /** the user's real numbers with nothing changed, so an Approve on a matching pending request is real */ live: boolean; view: CardView | null; inputs: string[]; decision: string; outcome: string; reasons: string[]; why: string | null; limitMet: boolean | null;
+export interface Scenario { kind: 'current' | 'mock'; inputs: string[]; decision: string; outcome: string; reasons: string[]; why: string | null; limitMet: boolean | null;
   plan: { instrument?: string; sizeUsd?: number; varBeforePct?: number; varAfterPct?: number; limitPct?: number; costUsd?: number; budgetUsd?: number } | null }
 export interface ChatResponse {
   answer: string; cites: Fact[]; unsure: boolean; unsureReason: string | null;
@@ -82,7 +74,7 @@ const realReadLive: LiveReader = async (wallet, network) => {
   const ws = await withTimeout(app.listWallets(network), 15_000, 'the app');
   const w = ws.find((x) => x.wallet.toLowerCase() === wallet.toLowerCase());
   // No saved settings yet: still read the wallet and venues live, with the default settings.
-  const snapshot = await withTimeout(withScratchStore(() => collectSnapshot(wallet, network, w?.config ?? DEFAULT_CONFIG, undefined, true)), 45_000, 'reading the accounts');
+  const snapshot = await withTimeout(collectSnapshot(wallet, network, w?.config ?? DEFAULT_CONFIG, undefined, true), 45_000, 'reading the accounts');
   return { snapshot, note: w ? null : 'No agent settings saved for this wallet yet; read with the defaults.' };
 };
 let readLive: LiveReader = realReadLive;
@@ -101,7 +93,7 @@ class Ctx {
     if (this.blocked) throw new LiveUnavailable(this.blocked);
     const { wallet, network } = this.req;
     // Not signed in: the app sends the zero address. There is no account to read.
-    if (/^0x0{40}$/i.test(wallet)) { this.blocked = 'No wallet is registered with the agent on this app yet, so there is no live portfolio to read. Connect a wallet and its agent keys on the Risk management page, then ask again.'; throw new LiveUnavailable(this.blocked); }
+    if (/^0x0{40}$/i.test(wallet)) { this.blocked = 'You are not signed in. Sign in with your wallet so I can read your live portfolio. I only answer questions about your money from your own accounts.'; throw new LiveUnavailable(this.blocked); }
     try { const r = await readLive(wallet, network); this.snapshot = r.snapshot; this.source = 'live'; this.sourceNote = r.note; return this.snapshot; }
     catch (e) {
       const why = e instanceof Error ? e.message : String(e); log.warn(`chat: live read failed: ${why}`);
@@ -113,17 +105,9 @@ class Ctx {
 const when = (t?: number | null) => (t ? new Date(t).toISOString().slice(0, 16).replace('T', ' ') + ' UTC' : 'unknown time');
 const ok = (ctx: Ctx, items: { label: string; value: string }[], note?: string) => JSON.stringify({ facts: ctx.register(items), ...(note ? { note } : {}) });
 
-function viewOf(s: Snapshot): CardView | null {
-  try {
-    const st = buildStatus(s); const l = s.config.limits;
-    return { portfolioUsd: st.portfolioUsd, hedgedPct: st.hedgedPct, requiredHedgePct: st.requiredHedgePct, varPct: st.varPct, limitPct: st.limitPct, mode: st.mode as 'autonomous' | 'confirm', killSwitch: st.killSwitch,
-      holdings: st.tickers.map((t) => ({ ticker: t.ticker, usd: t.usd, hedgedPct: t.hedgedPct })), nextEvent: st.nextEvent ? { ticker: st.nextEvent.ticker, kind: st.nextEvent.kind, inHours: st.nextEvent.inHours } : null,
-      limits: { maxPerTradeUsd: l.maxNotionalPerTradeUsd, maxPerDayUsd: l.maxNotionalPerDayUsd, maxLeverage: l.maxLeverage, dailyLossCapUsd: l.dailyLossCapUsd, weeklyBudgetPct: s.config.risk.premiumBudgetWeeklyPct, lossTolerancePct: s.config.risk.lossTolerancePct } };
-  } catch { return null; }
-}
-function scenarioOf(kind: 'current' | 'mock', inputs: string[], r: WhatIfResult, snap: Snapshot, live = false): Scenario {
+function scenarioOf(kind: 'current' | 'mock', inputs: string[], r: WhatIfResult): Scenario {
   const p = r.card?.plan as { instrument?: string; sizeUsd?: number; varBeforePct?: number; varAfterPct?: number; limitPct?: number; cost?: { premiumUsd: number; feesUsd: number; weeklyBudgetUsd: number } } | null | undefined;
-  return { kind, live, view: viewOf(snap), inputs, decision: r.decision, outcome: r.outcome, reasons: r.reasons, why: r.card?.why ?? null,
+  return { kind, inputs, decision: r.decision, outcome: r.outcome, reasons: r.reasons, why: r.card?.why ?? null,
     limitMet: p && p.varAfterPct !== undefined && p.limitPct !== undefined ? p.varAfterPct <= p.limitPct + 1e-9 : null,
     plan: p ? { instrument: p.instrument, sizeUsd: p.sizeUsd, varBeforePct: p.varBeforePct, varAfterPct: p.varAfterPct, limitPct: p.limitPct, costUsd: p.cost ? p.cost.premiumUsd + p.cost.feesUsd : undefined, budgetUsd: p.cost?.weeklyBudgetUsd } : null };
 }
@@ -173,13 +157,13 @@ function makeTools(ctx: Ctx): StructuredToolInterface[] {
         if (base === 'mock') {
           const m = MockPortfolio.parse(mock); const snap = buildMockSnapshot(m, ctx.req.wallet, ctx.req.network); const inputs = describeMock(m);
           const r = await withTimeout(runWhatIf(snap, { news: m.news }), 60_000, 'the hedging agent');
-          ctx.steps.push({ tool: 'run_hedging_agent', label: 'Ran the hedging agent on a mock portfolio' }); ctx.scenarios.push(scenarioOf('mock', inputs, r, snap)); if (r.card?.plan) ctx.ui.showPending = false;
+          ctx.steps.push({ tool: 'run_hedging_agent', label: 'Ran the hedging agent on a mock portfolio' }); ctx.scenarios.push(scenarioOf('mock', inputs, r));
           return ok(ctx, resultFacts(inputs, r));
         }
         const s = await ctx.ensureSnapshot(); const o = Overrides.parse(overrides ?? {});
         const { snapshot, applied } = applyOverrides(s, o); const inputs = [`your portfolio with ${applied.length ? applied.join('; ') : 'no changes'}`];
         const r = await withTimeout(runWhatIf(snapshot), 60_000, 'the hedging agent');
-        ctx.steps.push({ tool: 'run_hedging_agent', label: applied.length ? 'Ran the hedging agent with changed values' : 'Ran the hedging agent on your current numbers' }); ctx.scenarios.push(scenarioOf('current', inputs, r, snapshot, applied.length === 0)); if (applied.length === 0 && r.card?.plan) ctx.ui.showPending = true;
+        ctx.steps.push({ tool: 'run_hedging_agent', label: applied.length ? 'Ran the hedging agent with changed values' : 'Ran the hedging agent on your current numbers' }); ctx.scenarios.push(scenarioOf('current', inputs, r));
         return ok(ctx, resultFacts(inputs, r), ctx.sourceNote ?? undefined);
       } catch (e) {
         const msg = e instanceof z.ZodError ? `invalid arguments: ${e.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}` : e instanceof Error ? e.message : String(e);
@@ -187,29 +171,6 @@ function makeTools(ctx: Ctx): StructuredToolInterface[] {
       }
     }, { name: 'run_hedging_agent', description: 'Run the real hedging agent in dry run on numbers you choose, and read its decision, plan and whether the limit is met. base "current" with overrides tests the user\'s portfolio with a few values changed; base "mock" with mock tests a whole portfolio you build from what the user typed (defaults fill in what they did not say). Nothing is sent or saved.',
       schema: z.object({ base: z.enum(['current', 'mock']), overrides: Overrides.optional(), mock: MockPortfolio.optional() }) }),
-
-    tool(async ({ tickers }: { tickers?: string[] }) => {
-      ctx.steps.push({ tool: 'get_venue_tickers', label: 'Looked up the tickers on Lighter and Derive' });
-      const want = (tickers ?? []).map((t) => t.toUpperCase().replace(/B$/, '')).filter(Boolean);
-      const items: { label: string; value: string }[] = [];
-      try {
-        const j = await withTimeout(lighterGet<{ order_books?: { symbol: string; market_type?: string }[] }>('mainnet', 'orderBooks'), 12_000, 'Lighter');
-        const all = j.order_books ?? []; const perps = all.filter((m) => (m.market_type ?? 'perp') !== 'spot').map((m) => m.symbol);
-        if (!want.length) items.push({ label: 'Lighter markets', value: `${perps.length} perp markets: ${perps.join(', ')}` });
-        for (const t of want) { const hit = all.filter((m) => m.symbol.toUpperCase() === t || m.symbol.toUpperCase().startsWith(`${t}-`) || m.symbol.toUpperCase() === `${t}USD`); items.push({ label: `Lighter ${t}`, value: hit.length ? `listed: ${hit.map((m) => `${m.symbol}${m.market_type ? ` (${m.market_type})` : ''}`).join(', ')}` : 'no market with that symbol in the live Lighter market list' }); }
-      } catch (e) { items.push({ label: 'Lighter markets', value: `could not be read just now (${e instanceof Error ? e.message : String(e)})` }); }
-      try {
-        const cur = await withTimeout(deriveRpc<{ currency: string }[]>('mainnet', 'public/get_all_currencies', {}, {}), 12_000, 'Derive');
-        const names = (Array.isArray(cur) ? cur : []).map((c) => c.currency);
-        if (!want.length) items.push({ label: 'Derive currencies', value: `${names.length} underlyings: ${names.join(', ')}` });
-        for (const t of want) {
-          let opts = 0;
-          try { const r = await withTimeout(deriveRpc<{ instrument_name: string }[]>('mainnet', 'public/get_instruments', { currency: t, instrument_type: 'option', expired: false }, {}), 12_000, 'Derive'); opts = Array.isArray(r) ? r.length : 0; } catch { /* not listed */ }
-          items.push({ label: `Derive ${t}`, value: opts ? `listed, ${opts} live option instruments` : names.includes(t) ? 'listed as an underlying, no live option instruments returned' : 'no live option instruments with that underlying in the live Derive list' });
-        }
-      } catch (e) { items.push({ label: 'Derive currencies', value: `could not be read just now (${e instanceof Error ? e.message : String(e)})` }); }
-      return ok(ctx, items, 'Read live from the Lighter and Derive public APIs just now.');
-    }, { name: 'get_venue_tickers', description: 'List what is actually tradeable right now on Lighter (perp markets) and Derive (option underlyings), read live from both venues. Pass tickers to check specific ones (for example NVDA, XAU, ETH); omit to list everything. Use it when the user asks which tickers or markets exist, or before saying a hedge market is unavailable: never claim a ticker is missing without checking here.', schema: z.object({ tickers: z.array(z.string().max(10)).max(12).optional() }) }),
 
     tool(async ({ tickers }: { tickers?: string[] }) => {
       ctx.steps.push({ tool: 'get_market_data', label: 'Looked up market data' });
@@ -231,7 +192,7 @@ function makeTools(ctx: Ctx): StructuredToolInterface[] {
     tool(async () => {
       const s = await ctx.ensureSnapshot(); const st = buildStatus(s); const risk = assessRisk(s);
       const r = await withTimeout(runWhatIf(s), 60_000, 'the hedging agent');
-      ctx.steps.push({ tool: 'get_suggestions', label: 'Worked out suggestions' }); ctx.scenarios.push(scenarioOf('current', [`your current numbers`], r, s, true)); if (r.card?.plan) ctx.ui.showPending = true;
+      ctx.steps.push({ tool: 'get_suggestions', label: 'Worked out suggestions' }); ctx.scenarios.push(scenarioOf('current', [`your current numbers`], r));
       const items: { label: string; value: string }[] = [];
       const p = r.card?.plan as { options?: string[]; varAfterPct?: number; limitPct?: number } | null | undefined;
       items.push({ label: 'Suggestion: the agent would', value: `${r.decision}${p && p.varAfterPct !== undefined && p.limitPct !== undefined ? `. Limit ${p.varAfterPct <= p.limitPct + 1e-9 ? 'MET' : 'NOT met'}: ${p.varAfterPct}% after against ${p.limitPct}%` : ''}` });

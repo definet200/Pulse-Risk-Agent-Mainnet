@@ -22,11 +22,6 @@ const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
 const feedXml = (items: NewsItem[]) => `<rss><channel>${items.map((i, n) => `<item><title>${esc(i.title)}</title><link>http://x/${n}</link><pubDate>${new Date(Date.now() - i.hoursAgo * 3_600_000).toUTCString()}</pubDate><source>${esc(i.source)}</source></item>`).join('')}</channel></rss>`;
 const ALIAS: Record<string, string> = { NVDA: 'NVIDIA', TSLA: 'Tesla' };
 
-/** Run a read that needs the agent store (moves in the last 24 h) on a scratch in-memory store, one at a time with the what-if runs that use the same store. */
-export function withScratchStore<T>(fn: () => Promise<T>): Promise<T> {
-  return serial(async () => { openStore(':memory:'); try { return await fn(); } finally { closeStore(); } });
-}
-
 export function runWhatIf(snapshot: Snapshot, opts: { news?: NewsItem[] } = {}): Promise<WhatIfResult> {
   return serial(async () => {
     const s = structuredClone(snapshot); s.config.rebalance.enabled = false;

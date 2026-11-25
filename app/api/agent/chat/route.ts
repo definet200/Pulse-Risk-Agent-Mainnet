@@ -2,7 +2,6 @@ import { z } from 'zod';
 import { json, sessionWallet } from '@/lib/server/auth';
 import { listActions } from '@/lib/server/agent-actions';
 import { listEvents } from '@/lib/server/agent-store';
-import { getDb } from '@/lib/server/db';
 
 // Browser -> this route -> the agent's chat service (agent/src/server.ts, npm run chat). The browser never holds the token and never talks to the
 // agent. Signed in: the wallet comes from the session cookie (never from the body), the chat reads that wallet's live accounts and the recorded
@@ -16,11 +15,6 @@ const Body = z.object({
   history: z.array(z.object({ role: z.enum(['user', 'agent']), text: z.string().max(1600) })).max(20).default([]),
 });
 
-function defaultWallet(): string | null {
-  const env = process.env.CHAT_DEFAULT_WALLET?.trim(); if (env && /^0x[0-9a-fA-F]{40}$/.test(env)) return env;
-  const r = getDb().prepare(`SELECT wallet FROM agent_keys WHERE network = 'mainnet' AND status = 'active' UNION SELECT wallet FROM agent_config WHERE network = 'mainnet' LIMIT 1`).get() as { wallet: string } | undefined;
-  return r?.wallet ?? null;
-}
 const hits = new Map<string, { n: number; reset: number }>();
 function limited(key: string, max: number, windowMs: number): boolean {
   const now = Date.now(); const h = hits.get(key);
@@ -36,11 +30,8 @@ export async function POST(req: Request) {
     if (!b.success) return json({ error: 'a message is required' }, 400);
     // The chat always reads MAINNET: bStocks and the real positions live there, whatever the venue toggle in the header says.
     const n = 'mainnet' as const;
-    // No sign-in needed to chat. Signed out, the chat reads this app's own registered wallet (CHAT_DEFAULT_WALLET, else the first wallet with agent
-    // keys or settings on mainnet): this is a single-owner app. Approve and Decline still need a signed-in session.
-    const session = await sessionWallet();
-    const wallet = session ?? defaultWallet();
-    if (!session && limited(req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'local', 12, 60_000)) return json({ error: 'Too many questions. Wait a minute or sign in.' }, 429);
+    const wallet = await sessionWallet();
+    if (!wallet && limited(req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'local', 12, 60_000)) return json({ error: 'Too many questions. Wait a minute or sign in.' }, 429);
     const recorded = wallet ? {
       actions: listActions(wallet, n, 6).map((a) => ({ id: a.id, status: a.status, title: a.title, why: a.why, created_at: a.created_at, result_message: a.result_message })),
       events: (listEvents(wallet, n, 12) as { kind: string; status: string | null; message: string; created_at: number | null }[]).map((e) => ({ kind: e.kind, status: e.status, message: e.message, created_at: e.created_at })),

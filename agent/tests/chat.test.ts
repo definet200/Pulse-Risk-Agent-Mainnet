@@ -51,7 +51,7 @@ describe('the chat agent decides when to use tools', () => {
     const m = script([() => ai('', [{ name: 'get_portfolio', args: {} }]), () => ai('You are not signed in, so I cannot read your portfolio.')]);
     const r = await chat(req('How exposed am I?', { wallet: '0x0000000000000000000000000000000000000000' }));
     const tool = m.seen[1].find((x): x is ToolMessage => x instanceof ToolMessage)!;
-    expect(read).toBe(false); expect(String(tool.content)).toMatch(/no wallet is registered/i); expect(String(tool.content)).not.toMatch(/NVDA|\$50,000/);
+    expect(read).toBe(false); expect(String(tool.content)).toMatch(/not signed in/i); expect(String(tool.content)).not.toMatch(/NVDA|\$50,000/);
     expect(r.cites).toHaveLength(0); expect(r.unsure).toBe(true); expect(r.unsureReason).toMatch(/No live data/);
   }, 30_000);
 
@@ -216,38 +216,3 @@ SOURCES: ${idOf(msgs, 'NVDA exposure')}, ${idOf(msgs, 'Portfolio')}`)]);
   }, 30_000);
 });
 
-
-describe('hedge card data and venue tickers', () => {
-  it('a mock run carries the numbers the card tabs show (holdings, limits) and is a test', async () => {
-    script([() => ai('', [{ name: 'run_hedging_agent', args: { base: 'mock', mock: { holdings: [{ ticker: 'NVDA', valueUsd: 70_000 }, { ticker: 'AAPL', valueUsd: 30_000 }], events: [{ ticker: 'NVDA', hoursAhead: 24, gapPct: 12 }] } } }]),
-      (msgs) => ai(`Tested.\nSOURCES: ${idOf(msgs, 'Test decision')}`)]);
-    const r = await chat(req('Hedge my NVDA, next week looks bearish. 70k NVDA, 30k AAPL'));
-    const s = r.scenarios[0]; expect(s.live).toBe(false); expect(s.view).not.toBeNull();
-    expect(s.view!.holdings.map((h) => h.ticker)).toEqual(expect.arrayContaining(['NVDA', 'AAPL'])); expect(s.view!.limits.maxPerTradeUsd).toBeGreaterThan(0);
-  }, 90_000);
-
-  it('a live run with nothing changed is flagged live and asks the UI to show pending requests', async () => {
-    script([() => ai('', [{ name: 'run_hedging_agent', args: { base: 'current' } }]), (msgs) => ai(`ok\nSOURCES: ${idOf(msgs, 'Test decision')}`)]);
-    const r = await chat(req('Hedge my portfolio'));
-    expect(r.scenarios[0].live).toBe(true); if (r.scenarios[0].plan) expect(r.ui.showPending).toBe(true);
-  }, 90_000);
-
-  it('get_venue_tickers reads Lighter and Derive live and reports exactly what is listed', async () => {
-    const real = globalThis.fetch;
-    globalThis.fetch = (async (u: string | URL | Request, init?: RequestInit) => {
-      const url = String(u);
-      if (url.includes('orderBooks')) return new Response(JSON.stringify({ code: 200, order_books: [{ symbol: 'NVDA', market_type: 'perp' }, { symbol: 'ETH', market_type: 'perp' }] }));
-      if (url.includes('get_all_currencies')) return new Response(JSON.stringify({ result: [{ currency: 'ETH' }, { currency: 'BTC' }] }));
-      if (url.includes('get_instruments')) return new Response(JSON.stringify({ result: JSON.parse(String(init?.body)).currency === 'ETH' ? [{ instrument_name: 'ETH-1' }] : [] }));
-      return real(u, init);
-    }) as typeof fetch;
-    try {
-      const m = script([() => ai('', [{ name: 'get_venue_tickers', args: { tickers: ['NVDA', 'ETH'] } }]), (msgs) => ai(`Checked.\nSOURCES: ${idOf(msgs, 'Lighter NVDA')}, ${idOf(msgs, 'Derive ETH')}`)]);
-      const r = await chat(req('Which tickers can I hedge on Lighter and Derive? NVDA, ETH'));
-      const facts = toolFacts(m.seen[1]);
-      expect(facts.find((f) => f.label === 'Lighter NVDA')!.value).toMatch(/listed: NVDA/); expect(facts.find((f) => f.label === 'Derive ETH')!.value).toMatch(/1 live option/);
-      expect(facts.find((f) => f.label === 'Derive NVDA')!.value).toMatch(/no live option instruments/);
-      expect(r.steps.some((s) => s.tool === 'get_venue_tickers')).toBe(true);
-    } finally { globalThis.fetch = real; }
-  }, 30_000);
-});
