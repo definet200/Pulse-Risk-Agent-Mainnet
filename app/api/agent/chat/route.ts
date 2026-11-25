@@ -49,7 +49,7 @@ export async function POST(req: Request) {
     let r: Response;
     try {
       r = await fetch(`${AGENT_CHAT_URL}/chat`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-        body: JSON.stringify({ wallet: wallet ?? ANON_WALLET, network: n, message: b.data.message, history: b.data.history, recorded }), signal: AbortSignal.timeout(175_000) });
+        body: JSON.stringify({ wallet: wallet ?? ANON_WALLET, signedIn: !!session, network: n, message: b.data.message, history: b.data.history, recorded }), signal: AbortSignal.timeout(175_000) });
     } catch {
       return json({ error: `The agent chat service is not reachable at ${AGENT_CHAT_URL}. Start it with "npm run chat" in the agent folder.` }, 502);
     }

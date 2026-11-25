@@ -7,6 +7,7 @@ import type { Candidate, Snapshot } from '../types';
 import * as app from './appApi';
 import { filterCandidates } from './guard';
 import { buildCandidates } from './planner';
+import { candidateFromSpec, priceStillOk, quoteSpec, type ChatTradeSpec } from '../chat/trade';
 
 // Runs requests the user approved (confirmation mode). The approval says "do this kind of move"; the numbers are
 // re-planned from fresh data and re-checked by the guard, so an old approval can never push a stale or oversized move.
@@ -44,7 +45,29 @@ export async function runApproved(snapshot: Snapshot, opts: { onExecuted?: (c: C
   const ack = (a: ActionRow, status: 'executed' | 'failed' | 'expired', msg: string) =>
     app.postActionResult(a.id, snapshot.wallet, snapshot.network, status, msg).catch((e) => log.warn(`ack failed for #${a.id}: ${errText(e)}`));
 
+  const runOne = async (a: ActionRow, chosen: Candidate) => {
+    const st = blank(snapshot, chosen);
+    const g = guard(st);
+    if (g.outcome) { await ack(a, 'failed', `${g.note ?? 'guard refused'}. Nothing was moved.`); return; }
+    const ex = await executeNode(st);
+    const done: AgentStateT = { ...st, ...ex, decision: { action: 'execute', candidateId: chosen.id, reason: `You approved: ${a.title}` } };
+    const rep = await report(done).catch(() => ({ message: '' }));
+    const failedStep = done.steps.find((x) => x.status === 'failed');
+    if (done.outcome === 'failed') await ack(a, 'failed', `Failed at "${failedStep?.step ?? 'a step'}": ${failedStep?.detail ?? 'unknown error'}. Nothing further was moved.`);
+    else { opts.onExecuted?.(chosen); await ack(a, 'executed', config().live ? `Done. ${rep.message ?? ''}`.trim() : `Dry run, no money moved. It would have: ${done.steps.map((x) => x.step).join('; ')}.`); }
+  };
+
   for (const a of approved) {
+    // A trade the user asked for in the chat: rebuilt from its exact spec, re-quoted, then the same guard as any trade.
+    const spec = (a.detail as { chatTrade?: ChatTradeSpec }).chatTrade;
+    if (a.origin === 'chat' && spec) {
+      try {
+        const q = await quoteSpec(snapshot.network, spec);
+        if (!priceStillOk(spec, q.price)) { await ack(a, 'expired', `Not run: the price moved from $${spec.quotedPrice} to $${q.price} (more than 25%) since you approved. Nothing was moved; ask again for a fresh quote.`); continue; }
+        await runOne(a, candidateFromSpec(spec, q, `chat-${a.id}`));
+      } catch (e) { await ack(a, 'failed', `Not run: ${errText(e)}. Nothing was moved.`); }
+      continue;
+    }
     const fresh = f.ok.find((c) => matches(a, c));
     if (!fresh) {
       const why = [...plan.rejected, ...f.rejected].find((r) => (a.detail as { ruleKey?: string | null }).ruleKey === (r.ruleKey ?? null))?.reason;
@@ -55,15 +78,7 @@ export async function runApproved(snapshot: Snapshot, opts: { onExecuted?: (c: C
       await ack(a, 'expired', 'Not run: the size changed by more than 25% since you approved, so it needs a fresh OK. Nothing was moved.');
       continue;
     }
-    const st = blank(snapshot, fresh);
-    const g = guard(st);
-    if (g.outcome) { await ack(a, 'failed', `${g.note ?? 'guard refused'}. Nothing was moved.`); continue; }
-    const ex = await executeNode(st);
-    const done: AgentStateT = { ...st, ...ex, decision: { action: 'execute', candidateId: fresh.id, reason: `You approved: ${a.title}` } };
-    const rep = await report(done).catch(() => ({ message: '' }));
-    const failedStep = done.steps.find((x) => x.status === 'failed');
-    if (done.outcome === 'failed') await ack(a, 'failed', `Failed at "${failedStep?.step ?? 'a step'}": ${failedStep?.detail ?? 'unknown error'}. Nothing further was moved.`);
-    else { opts.onExecuted?.(fresh); await ack(a, 'executed', config().live ? `Done. ${rep.message ?? ''}`.trim() : `Dry run, no money moved. It would have: ${done.steps.map((x) => x.step).join('; ')}.`); }
+    await runOne(a, fresh);
   }
   return approved.length;
 }

@@ -26,7 +26,7 @@ const MAX_BODY = 128 * 1024;
 const RUN_TIMEOUT_MS = 170_000;
 
 const Req = z.object({
-  wallet: z.string().regex(/^0x[0-9a-fA-F]{40}$/), network: z.enum(['mainnet', 'testnet']),
+  wallet: z.string().regex(/^0x[0-9a-fA-F]{40}$/), network: z.enum(['mainnet', 'testnet']), signedIn: z.boolean().default(false),
   message: z.string().min(1).max(1200),
   history: z.array(z.object({ role: z.enum(['user', 'agent']), text: z.string().max(50_000).transform((t) => t.slice(0, 1600)) })).max(50).transform((h) => h.slice(-20)).default([]),
   recorded: z.object({

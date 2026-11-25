@@ -23,7 +23,7 @@ export const ActionIn = z.object({
   kind: z.enum(['top_up', 'release', 'hedge']),
   venue: z.enum(['lighter', 'derive']),
   /** Why it came up: a margin rule or a news-driven hedge. */
-  origin: z.enum(['rule', 'news']),
+  origin: z.enum(['rule', 'news', 'chat']),
   /** One request per slot is open at a time; a newer one supersedes it. e.g. 'lighter:' or 'hedge:NVDA'. */
   slot: z.string().min(1).max(60),
   title: z.string().min(1).max(160),
