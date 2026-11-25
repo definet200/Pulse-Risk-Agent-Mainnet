@@ -50,7 +50,7 @@ export function Tabs<T extends string>({ tabs, value, onChange, size = 'md' }: {
   return (
     <div className="flex gap-1">
       {tabs.map((t) => (
-        <button key={t.id} onClick={() => onChange(t.id)} className={clsx('rounded-full transition-colors', size === 'sm' ? 'px-3 py-1 text-sm' : 'px-4 py-1.5 text-[15px]', value === t.id ? 'bg-panel2 text-white' : 'text-muted hover:text-white')}>{t.label}</button>
+        <button key={t.id} onClick={() => onChange(t.id)} className={clsx('rounded-full border border-transparent transition-colors', size === 'sm' ? 'px-3 py-1 text-sm' : 'px-4 py-1.5 text-[15px]', value === t.id ? 'border border-accent/60 bg-accent/[0.07] text-white' : 'text-muted hover:text-white')}>{t.label}</button>
       ))}
     </div>
   );

@@ -1,5 +1,7 @@
 import type { VenueAlternative } from '../../../lib/agent-action';
 import { tickerOf } from '../risk/market';
+import { chatTradeRequest, quoteSpec, specFrom } from './trade';
+import { postActionToApp } from '../tools/appApi';
 import { payoff, type Payoff } from '../risk/payoff';
 import { quotePut } from '../risk/putQuote';
 import { deriveCurrencyOf, liveOptionNames } from '../risk/options';
@@ -29,7 +31,7 @@ import { lighterGet } from '../tools/lighter';
 // ids and code checks every dollar figure and percentage in it against those facts. The chat cannot execute, approve or save anything: approving
 // is the Approve button the chat UI shows for a pending request, which calls the app's own approval endpoint.
 
-export interface ChatRequest { wallet: string; network: 'mainnet' | 'testnet'; message: string; history: { role: 'user' | 'agent'; text: string }[]; recorded: Recorded }
+export interface ChatRequest { /** true only when the app has a signed-in session for this wallet (trade requests need it). */ signedIn?: boolean; wallet: string; network: 'mainnet' | 'testnet'; message: string; history: { role: 'user' | 'agent'; text: string }[]; recorded: Recorded }
 export interface Step { tool: string; label: string }
 /** What the hedge card shows in its Home and Limits tabs, built by code from the numbers the test ran on. */
 export interface CardView {
@@ -248,6 +250,27 @@ function makeTools(ctx: Ctx): StructuredToolInterface[] {
       } catch (e) { return ok(ctx, [{ label: `Derive ${t} put`, value: `could not be priced just now (${e instanceof Error ? e.message : String(e)})` }]); }
     }, { name: 'price_derive_put', description: "Price a protective put on Derive LIVE for one ticker: reads the order book and returns the instrument, contracts, premium, fees, Derive's minimum size, and the payoff before and after (the chat draws it). Defaults: the user's holding value, an at-the-money strike, the first expiry at least 7 days out. Use whenever the user asks what a put costs or to compare a put with a perp.", schema: z.object({ ticker: z.string().max(10), notionalUsd: z.number().positive().max(10_000_000).optional(), strikePct: z.number().min(50).max(120).optional(), minDays: z.number().min(1).max(45).optional() }) }),
 
+    tool(async ({ venue, instrument, side, amount }: { venue: 'lighter' | 'derive'; instrument: string; side: 'buy' | 'sell'; amount: number }) => {
+      ctx.steps.push({ tool: 'propose_trade', label: `Prepared ${side} ${amount} ${instrument} for your approval` });
+      if (!ctx.req.signedIn) return ok(ctx, [{ label: 'Trade request', value: 'not created: you are not signed in. Sign in with your wallet, then ask again.' }]);
+      try {
+        const s = await ctx.ensureSnapshot();
+        if (ctx.source !== 'live') return ok(ctx, [{ label: 'Trade request', value: 'not created: your live accounts could not be read' }]);
+        const spec0 = await specFrom(s.network, { venue, instrument, side, amount });
+        const q = await withTimeout(quoteSpec(s.network, spec0), 20_000, venue === 'derive' ? 'Derive' : 'Lighter');
+        const spec = { ...spec0, quotedPrice: q.price };
+        const { post, payoff: po } = chatTradeRequest(s, spec, q);
+        const r = await postActionToApp(post);
+        ctx.ui.showPending = true;
+        const items = [
+          { label: 'Trade request', value: `${post.title}: ${r.duplicate ? 'already waiting' : 'created'} (status ${r.status}). It is NOT placed yet: it runs only when you press Approve below; the agent re-quotes it then and refuses if the price is more than 25% worse. Your caps and kill switch still apply.` },
+          { label: 'Live quote', value: `${spec.side === 'buy' ? 'ask' : 'bid'} $${q.price}; ${spec.kind === 'put' ? `premium about $${q.costUsd} plus about $${(spec.amount * 0.5).toFixed(2)} fees` : `notional about $${q.notionalUsd}`}` },
+        ];
+        if (po) { const d = po.points.find((x) => x.movePct === -20); const u = po.points.find((x) => x.movePct === 20); if (d && u) items.push({ label: `${po.ticker} payoff with this trade`, value: `at -20%: ${d.beforeUsd} before vs ${d.afterUsd} after; at +20%: ${u.beforeUsd} vs ${u.afterUsd} (USD)` }); }
+        return ok(ctx, items, 'The request card with Approve and Reject is shown below the answer.');
+      } catch (e) { return ok(ctx, [{ label: 'Trade request', value: `not created: ${e instanceof Error ? e.message : String(e)}` }]); }
+    }, { name: 'propose_trade', description: "Turn a position the user asks for into a real order request in their account, shown with Approve and Reject. Use it when they ask you to take, place, open, buy, sell, short or close a position (e.g. 'buy that NVDA put', 'short 0.07 NVDA on Lighter'). Derive: buy a put (exact instrument name such as NVDA-20261204-133-P, from price_derive_put) or trade a perp (NVDA-PERP). Lighter: a perp by symbol (NVDA), buy or sell. amount = contracts (Derive) or units (Lighter). Nothing executes until the user presses Approve.", schema: z.object({ venue: z.enum(['lighter', 'derive']), instrument: z.string().min(2).max(40), side: z.enum(['buy', 'sell']), amount: z.number().positive().max(1_000_000) }) }),
+
     tool(async ({ tickers }: { tickers?: string[] }) => {
       ctx.steps.push({ tool: 'get_market_data', label: 'Looked up market data' });
       const want = (tickers?.length ? tickers : Object.keys(MARKETS)).map((t) => t.toUpperCase());
@@ -362,5 +385,5 @@ export async function chat(req: ChatRequest): Promise<ChatResponse> {
   else if (ctx.blocked && !cites.length) unsureReason = 'No live data was read for this answer.';
   else if (usedTools && !cites.length && !unsureReason) unsureReason = 'I could not tie this answer to any of the data I read.';
   return { answer: (parsed.answer.length > 2200 ? `${parsed.answer.slice(0, 2200)}...` : parsed.answer) || 'I have nothing to add.', cites, unsure: !!unsureReason, unsureReason, source: ctx.source, sourceNote: ctx.sourceNote,
-    steps: ctx.steps, scenarios: ctx.scenarios, quotes: ctx.quotes, ui: ctx.ui, usedTools, usedModel: true };
+    steps: ctx.steps, scenarios: ctx.scenarios, quotes: ctx.quotes, ui: { ...ctx.ui, showPending: ctx.ui.showPending || (ctx.source === 'live' && ctx.req.recorded.actions.some((a) => a.status === 'pending')) }, usedTools, usedModel: true };
 }

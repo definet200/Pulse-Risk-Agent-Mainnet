@@ -12,3 +12,8 @@ next-env.d.ts
 .env.test.local
 .env.production.local
 .env.example
+
+# Runtime state and local files: never commit (open-source repo)
+**/data/*.db*
+.DS_Store
+*.key

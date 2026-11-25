@@ -123,6 +123,8 @@ export interface Candidate {
   plan?: HedgePlanView;
   /** USD notional this action trades (hedge only), for the per-trade and per-day limits. */
   notionalUsd?: number;
+  /** A trade the user asked for in the chat and approved: exact instrument and size, not chosen by the planner. */
+  chat?: boolean;
   /** Stable per (wallet, rule, kind, amount, lastMoveAt): the same action reuses the same key on retry. */
   idempotencyKey: string;
   /** Plain-language need score used only for ordering (higher = more urgent). */

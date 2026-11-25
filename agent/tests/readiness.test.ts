@@ -4,7 +4,7 @@ import { fixtureSnapshot } from '../src/fixtures';
 import { readinessAlerts, type ReadinessEnv } from '../src/readiness';
 import { buildStatus } from '../src/status';
 
-const ok: ReadinessEnv = { live: true, agentBsc: '0xD60939bfDf5744e9589B32cd94Af4a6536F68aF2', agentBnbWei: 10n ** 16n, agentEthWei: 10n ** 16n };
+const ok: ReadinessEnv = { live: true, agentBsc: '0x000000000000000000000000000000000000aBcD', agentBnbWei: 10n ** 16n, agentEthWei: 10n ** 16n };
 const funded = () => { const s = fixtureSnapshot(); s.bsc.allowanceUsdcBase = '100000000'; return s; };
 
 describe('readiness alerts: what stops Auto mode from acting, each with its fix', () => {

@@ -28,10 +28,30 @@ async function readinessEnv(s: Snapshot, live: boolean): Promise<ReadinessEnv> {
 
 const lastProposed = new Map<string, number>();
 
-export async function tick(graph = buildGraph(), opts: { forceProposal?: boolean } = {}) {
+const lastCheck = new Map<string, number>();
+
+/** Run this wallet now? Due on schedule (auto on), Run now pressed since the last check, or an approval waiting. */
+export function dueReason(cfg: { schedule?: { auto: boolean; runNowAt: number | null } }, last: number | undefined, intervalMs: number, approvedWaiting: boolean, now = Date.now()): 'scheduled' | 'run-now' | 'approved' | null {
+  const sch = cfg.schedule ?? { auto: true, runNowAt: null };
+  if (sch.runNowAt && sch.runNowAt > (last ?? 0)) return 'run-now';
+  if (approvedWaiting) return 'approved';
+  if (sch.auto && now - (last ?? 0) >= intervalMs) return 'scheduled';
+  return null;
+}
+
+export async function tick(graph = buildGraph(), opts: { forceProposal?: boolean; all?: boolean } = {}) {
   const c = config();
   const wallets = await app.listWallets(c.AGENT_NETWORK);
   for (const w of wallets) {
+    const lk = `${w.wallet}:${c.AGENT_NETWORK}`;
+    if (!opts.all) {
+      let waiting = false;
+      try { waiting = (await app.listActions(w.wallet, c.AGENT_NETWORK, 'approved')).length > 0; } catch { /* checked on the next wake */ }
+      const why = dueReason(w.config, lastCheck.get(lk), c.TICK_INTERVAL_SEC * 1000, waiting);
+      if (!why) continue;
+      if (why !== 'scheduled') log.info(`[${w.wallet.slice(0, 8)}] check now (${why === 'run-now' ? 'Run now pressed' : 'approved request waiting'})`);
+    }
+    lastCheck.set(lk, Date.now());
     try {
       const snapshot = await collectSnapshot(w.wallet, c.AGENT_NETWORK, w.config);
       // Anything the user approved since the last check runs first (each is re-planned and re-guarded).
@@ -47,6 +67,7 @@ export async function tick(graph = buildGraph(), opts: { forceProposal?: boolean
     } catch (e) { log.error(`wallet ${w.wallet} failed: ${e instanceof Error ? e.message : String(e)}`); }
     // The risk analyst re-fits the rule every PROPOSE_INTERVAL_SEC and submits it for human approval.
     const k = `${w.wallet}:${c.AGENT_NETWORK}`;
+    if ((w.config.schedule?.auto ?? true) === false && !opts.forceProposal) continue;   // automatic checks off: no unprompted rule proposals either
     if (opts.forceProposal || Date.now() - (lastProposed.get(k) ?? 0) >= c.PROPOSE_INTERVAL_SEC * 1000) {
       lastProposed.set(k, Date.now());
       log.info(`[${w.wallet.slice(0, 8)}] risk analyst: ${await proposeForWallet(w.wallet, c.AGENT_NETWORK, w.config)}`);
@@ -62,11 +83,14 @@ async function main() {
   const graph = buildGraph();
   const once = process.argv.includes('--once') || process.argv.includes('--propose-once');
   const forceProposal = process.argv.includes('--propose-once');
+  // Wake every 5 s: each wallet is checked when it is due (every TICK_INTERVAL_SEC with automatic checks on), when
+  // Run now was pressed, or when an approved request is waiting.
+  const WAKE_MS = 5_000;
   for (;;) {
     const started = Date.now();
-    try { await tick(graph, { forceProposal }); } catch (e) { log.error(`tick failed: ${e instanceof Error ? e.message : String(e)}`); }
+    try { await tick(graph, { forceProposal, all: once }); } catch (e) { log.error(`tick failed: ${e instanceof Error ? e.message : String(e)}`); }
     if (once) return;
-    await new Promise((r) => setTimeout(r, Math.max(1000, c.TICK_INTERVAL_SEC * 1000 - (Date.now() - started))));
+    await new Promise((r) => setTimeout(r, Math.max(1000, WAKE_MS - (Date.now() - started))));
   }
 }
 

@@ -98,6 +98,8 @@ export function memoryActions() {
 }
 
 let actions: ActionsBackend = httpActions;
+/** Always the real app API, even while a what-if run has swapped in the in-memory inbox (chat trade requests). */
+export const postActionToApp = (a: ActionPost) => httpActions.create(a);
 export const setActionsBackend = (b?: ActionsBackend) => { actions = b ?? httpActions; };
 export const postAction = (a: ActionPost) => actions.create(a);
 export const listActions = (wallet: string, network: Network, status: 'pending' | 'approved') => actions.list(wallet, network, status);

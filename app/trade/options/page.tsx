@@ -1,6 +1,6 @@
 'use client';
 import { OrderHistory } from '@/components/trade/OrderHistory';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { useVenueNetwork } from '@/lib/network';
@@ -202,17 +202,23 @@ function OptionTicket({ sel, onClear, universeId }: { sel: { name: string; side:
   useEffect(() => { if (sel) { setSide(sel.side); setPrice(sel.price); setType('limit'); setMsg(null); } }, [sel]);
 
   const hasAccount = acct.data ? acct.data.state !== 'no_account' : null;
+  // A ref, not state: two fast clicks land before React re-renders the disabled button (this placed a duplicate order).
+  const sending = useRef(false);
   async function submit() {
-    if (!sel) return;
+    if (!sel || sending.current) return;
+    sending.current = true;
     setBusy(true); setMsg(null);
     try {
       const r = await getJson<{ order: { order_id: string; order_status: string; filled_amount: string; average_price: string } }>('/api/trade/derive', {
         method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': newIdem() },
         body: JSON.stringify({ network, action: 'order', instrument: sel.name, side, type, amount, limitPrice: type === 'limit' ? price : undefined }),
       });
-      setMsg({ ok: true, text: `${r.order.order_status} · filled ${r.order.filled_amount} @ ${r.order.average_price}` });
+      const filled = Number(r.order.filled_amount);
+      setMsg({ ok: true, text: r.order.order_status === 'open'
+        ? `Order placed and resting on the book${type === 'limit' ? ` at $${price}` : ''}: ${filled > 0 ? `${filled} filled so far` : 'it fills when a seller meets your price'}. It is listed under Open orders below, where you can cancel it.`
+        : `${r.order.order_status === 'filled' ? 'Filled' : r.order.order_status}: ${r.order.filled_amount} @ ${r.order.average_price}` });
       void qc.invalidateQueries({ queryKey: ['derive-account'] });
-    } catch (e) { setMsg({ ok: false, text: (e as Error).message }); } finally { setBusy(false); }
+    } catch (e) { setMsg({ ok: false, text: (e as Error).message }); } finally { setBusy(false); sending.current = false; }
   }
   const premium = Number(amount) * Number(price);
   const universe = acct.data?.universes?.find((u) => u.id === universeId);
@@ -261,13 +267,24 @@ function DeriveAccountPanel() {
   const acct = useDeriveAccount();
   const { network } = useVenueNetwork();
   const qc = useQueryClient();
-  const [tab, setTab] = useState<'positions' | 'history' | 'universes'>('positions');
+  const [tab, setTab] = useState<'positions' | 'orders' | 'history' | 'universes' | null>(null);
+  const [cancelling, setCancelling] = useState<string | null>(null);
+  const [cancelErr, setCancelErr] = useState<string | null>(null);
   const d = acct.data;
   if (!d) return <Empty>Sign in to see Derive positions</Empty>;
   if (d.state === 'no_account') return <Empty>No Derive account yet. Deposit first.</Empty>;
   if (d.state === 'needs_agent' || !d.subaccounts) return <Empty>Register a Derive agent to read positions</Empty>;
   const subs = d.subaccounts;
   const positions = subs.flatMap((s) => s.positions.map((p) => ({ ...p, sub: s })));
+  const orders = subs.flatMap((s) => (s.open_orders ?? []).map((o) => ({ ...o, sub: s })));
+  const shown = tab ?? (orders.length ? 'orders' : 'positions');
+  async function cancel(instrument: string, orderId: string) {
+    setCancelling(orderId); setCancelErr(null);
+    try {
+      await getJson('/api/trade/derive', { method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': newIdem() }, body: JSON.stringify({ network, action: 'cancel', instrument, orderId }) });
+      await qc.invalidateQueries({ queryKey: ['derive-account'] });
+    } catch (e) { setCancelErr((e as Error).message); } finally { setCancelling(null); }
+  }
   const total = subs.reduce((a, s) => a + Number(s.collaterals_value), 0);
   async function close(instrument: string, amount: string) {
     // Reduce-only market order on the opposite side for the full size.
@@ -280,10 +297,25 @@ function DeriveAccountPanel() {
   return (
     <>
       <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
-        <Tabs tabs={[{ id: 'positions', label: `Positions (${positions.length})` }, { id: 'history', label: 'Order history' }, { id: 'universes', label: 'Risk universes & subaccounts' }] as const} value={tab} onChange={setTab} />
+        <Tabs tabs={[{ id: 'positions', label: `Positions (${positions.length})` }, { id: 'orders', label: `Open orders (${orders.length})` }, { id: 'history', label: 'Order history' }, { id: 'universes', label: 'Risk universes & subaccounts' }] as const} value={shown} onChange={setTab} />
         <span className="text-sm"><span className="text-muted">Total collateral </span><span className="num">{fmtUsd(total)}</span></span>
       </div>
-      {tab === 'positions' ? (!positions.length ? <Empty>No positions</Empty> : (
+      {shown === 'orders' ? (!orders.length ? <Empty>No open orders</Empty> : (
+        <>
+          {cancelErr && <p className="mb-2 text-xs text-down">Cancel failed: {cancelErr}</p>}
+          <table className="w-full"><thead><tr>{['Instrument', 'Subaccount', 'Side', 'Amount', 'Limit price', 'Filled', 'Status', ''].map((h) => <th key={h} className="th">{h}</th>)}</tr></thead><tbody>
+            {orders.map((o) => <tr key={o.order_id}>
+              <td className="td">{o.instrument_name}</td>
+              <td className="td text-muted">#{o.sub.subaccount_id} · {o.sub.universeName}</td>
+              <td className={clsx('td', o.direction === 'buy' ? 'text-up' : 'text-down')}>{o.direction === 'buy' ? 'Buy' : 'Sell'}</td>
+              <td className="td">{fmtNum(+o.amount)}</td><td className="td">{fmtNum(+o.limit_price)}</td><td className="td">{fmtNum(+o.filled_amount)}</td>
+              <td className="td text-xs text-muted">{o.order_status}</td>
+              <td className="td text-right"><button type="button" disabled={cancelling === o.order_id} onClick={() => void cancel(o.instrument_name, o.order_id)}
+                className="rounded-full border border-down/60 px-3 py-1 text-xs text-down hover:bg-down/10 disabled:opacity-50">{cancelling === o.order_id ? 'Cancelling…' : 'Cancel'}</button></td>
+            </tr>)}
+          </tbody></table>
+        </>
+      )) : shown === 'positions' ? (!positions.length ? <Empty>No positions</Empty> : (
         <table className="w-full"><thead><tr>{['Instrument', 'Subaccount', 'Amount', 'Avg price', 'Mark', 'Value', 'uPnL', ''].map((h) => <th key={h} className="th">{h}</th>)}</tr></thead><tbody>
           {positions.map((p) => <tr key={`${p.sub.subaccount_id}:${p.instrument_name}`}><td className="td">{p.instrument_name}</td>
             <td className="td text-muted">#{p.sub.subaccount_id} · {p.sub.universeName}</td>
@@ -292,7 +324,7 @@ function DeriveAccountPanel() {
             <td className={clsx('td', +p.unrealized_pnl >= 0 ? 'text-up' : 'text-down')}>{fmtUsd(+p.unrealized_pnl)}</td>
             <td className="td text-right"><ClosePositionButton onClose={() => close(p.instrument_name, p.amount)} /></td></tr>)}
         </tbody></table>
-      )) : tab === 'history' ? <OrderHistory venues={['derive']} /> : <UniversesTable subs={subs} universes={d.universes ?? []} />}
+      )) : shown === 'history' ? <OrderHistory venues={['derive']} /> : <UniversesTable subs={subs} universes={d.universes ?? []} />}
     </>
   );
 }

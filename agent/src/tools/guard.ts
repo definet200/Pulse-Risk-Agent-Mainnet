@@ -40,8 +40,9 @@ export function checkCandidate(c: Candidate, s: Snapshot, now = new Date()): str
   const pol = policyCheck(c, s, now); if (pol.block) return pol.block;
 
   if (c.kind === 'hedge') {
-    if (!s.config.hedge.enabled) return 'hedging is off';
-    if (!c.hedge || !legInConfig(s.config.hedge.legs, c.hedge)) return 'hedge leg not in config';
+    // A trade the user asked for in the chat and approved need not be a saved hedge leg; every other check still applies.
+    if (!c.chat && !s.config.hedge.enabled) return 'hedging is off';
+    if (!c.hedge || (!c.chat && !legInConfig(s.config.hedge.legs, c.hedge))) return 'hedge leg not in config';
     const mp = c.plan?.marginPlan;
     if (mp && mp.moveUsd > 0) {
       const base = (BigInt(Math.round(mp.moveUsd * 100)) * 10_000n).toString();

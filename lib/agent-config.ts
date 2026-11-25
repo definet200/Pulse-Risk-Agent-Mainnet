@@ -142,6 +142,12 @@ const AgentConfigBase = z.object({
     /** Haircut applied to a bStock's value when counting what selling it yields (0.3 = 30% off). */
     bstockHaircut: z.number().min(0).max(0.9),
   }),
+  /** When the agent checks this wallet: automatically every 30 s, or only when you press Run now. Approved requests always run. */
+  schedule: z.object({
+    auto: z.boolean(),
+    /** Unix ms of the last "Run now" press; the agent runs one check when this is newer than its last check. */
+    runNowAt: z.number().int().nullable(),
+  }).default({ auto: true, runNowAt: null }),
 }).superRefine((c, ctx) => {
   const seen = new Set<string>();
   c.rebalance.rules.forEach((r, i) => {
@@ -191,6 +197,7 @@ export const DEFAULT_CONFIG: AgentConfig = {
     keepBscReserveBaseUnit: '10000000',
   },
   collateral: { bstockHaircut: 0.3 },
+  schedule: { auto: true, runNowAt: null },
 };
 
 /** Agent-written runtime state for one rule (dwell timers, run-once markers, last outcome). */

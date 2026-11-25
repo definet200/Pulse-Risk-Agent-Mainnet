@@ -19,6 +19,7 @@ import { Switch } from '@/components/risk/ZoneBar';
 import { ProposalCard } from '@/components/risk/ProposalCard';
 import { ActionCard, ActionHistory, ModeToggle } from '@/components/risk/ActionCard';
 import { HedgeStatus } from '@/components/risk/HedgeStatus';
+import { CheckSchedule } from '@/components/risk/CheckSchedule';
 import { LatestRun } from '@/components/risk/LatestRun';
 import { LimitsPanel } from '@/components/risk/LimitsPanel';
 import { ActivityFeed, type EventRow } from '@/components/risk/ActivityFeed';
@@ -87,6 +88,8 @@ export default function RiskPage() {
       {cfg.limits.killSwitch && (
         <div role="alert" className="flex items-center gap-2 rounded-xl bg-down px-4 py-2.5 text-sm font-semibold text-white"><OctagonX size={16} />Kill switch ARMED, no new orders or transfers</div>
       )}
+
+      <CheckSchedule schedule={cfg.schedule ?? { auto: true, runNowAt: null }} onChange={(sch) => persist({ ...cfg, schedule: sch })} />
 
       <HedgeStatus onKillSwitch={(next) => void persist({ ...cfg, limits: { ...cfg.limits, killSwitch: next } })} />
 

@@ -46,9 +46,11 @@ export function policyCheck(c: Candidate, s: Snapshot, now = new Date()): Policy
   if (c.kind === 'hedge') {
     const h = c.hedge!; const cfg = s.config;
     if (h.ticker && cfg.risk.excludeTickers.includes(h.ticker)) return { block: `${h.ticker} is on your do-not-hedge list`, confirm: null };
-    if (!legInConfig(cfg.hedge.legs, h)) return { block: `market ${h.market} is not on your allowlist`, confirm: null };
+    // A trade you asked for in the chat and approved is its own allowlist entry; the caps below still apply.
+    if (!c.chat && !legInConfig(cfg.hedge.legs, h)) return { block: `market ${h.market} is not on your allowlist`, confirm: null };
     const n = c.notionalUsd ?? 0; const biggest = c.plan?.orders?.length ? Math.max(...c.plan.orders) : n;   // a hedge split into orders is checked order by order
-    if (n > lim.maxNotionalPerTradeUsd + 1e-6 && !h.removesNetShort && effectiveMode(s, now).mode === 'autonomous') return { block: null, confirm: `this decision trades ${usd(n)} in total, above your per-trade cap of ${usd(lim.maxNotionalPerTradeUsd)}, and the agent never goes over that cap on its own` };
+    // Over the cap, an agent decision in Auto mode asks first; a chat trade the user already approved is refused outright (next line).
+    if (n > lim.maxNotionalPerTradeUsd + 1e-6 && !h.removesNetShort && !c.chat && effectiveMode(s, now).mode === 'autonomous') return { block: null, confirm: `this decision trades ${usd(n)} in total, above your per-trade cap of ${usd(lim.maxNotionalPerTradeUsd)}, and the agent never goes over that cap on its own` };
     if (biggest > lim.maxNotionalPerTradeUsd + 1e-6) return { block: `trade of ${usd(n)} is above your max notional per trade (${usd(lim.maxNotionalPerTradeUsd)})`, confirm: null };
     const day = t?.notionalUsd ?? 0;
     if (day + n > lim.maxNotionalPerDayUsd) return { block: `would take today's hedge notional to ${usd(day + n)}, above your daily max (${usd(lim.maxNotionalPerDayUsd)})`, confirm: null };
