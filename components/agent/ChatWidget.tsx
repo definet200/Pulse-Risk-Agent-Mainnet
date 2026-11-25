@@ -51,7 +51,7 @@ export function ChatWidget() {
 
   async function send(q: string) {
     const message = q.trim(); if (!message || busy) return;
-    const history = msgs.slice(-8).map((m) => ({ role: m.role, text: m.text }));
+    const history = msgs.slice(-8).map((m) => ({ role: m.role, text: m.text.slice(0, 1600) }));
     setMsgs((m) => [...m, { role: 'user', text: message }]); setText(''); setBusy(true);
     const gen = generation.current;
     try {
