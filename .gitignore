@@ -5,3 +5,9 @@ data/*.db*
 !.env.example
 next-env.d.ts
 *.tsbuildinfo
+
+# Runtime state and local files: never commit (open-source repo)
+**/data/*.db*
+.DS_Store
+*.pem
+*.key
