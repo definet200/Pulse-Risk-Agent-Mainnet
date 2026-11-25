@@ -29,8 +29,10 @@ ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 \
     DB_PATH=/app/data/pulsarx.db LIGHTER_WASM_DIR=/app/vendor/lighter
 COPY --from=build --chown=node:node /app/.next/standalone ./
 COPY --from=build --chown=node:node /app/.next/static ./.next/static
-# The Lighter signer is read from disk at runtime, so file tracing does not pick it up.
+# Read from disk at runtime (path built from process.cwd()), so file tracing does not pick them up:
+# the Lighter signer, and the markdown served by /docs.
 COPY --chown=node:node vendor/lighter ./vendor/lighter
+COPY --chown=node:node docs ./docs
 RUN mkdir -p /app/data && chown node:node /app/data
 USER node
 EXPOSE 3100
