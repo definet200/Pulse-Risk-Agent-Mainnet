@@ -5,3 +5,10 @@ data/*.db*
 !.env.example
 next-env.d.ts
 *.tsbuildinfo
+._*
+*.pem
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.example
