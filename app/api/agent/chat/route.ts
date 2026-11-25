@@ -13,7 +13,8 @@ const AGENT_CHAT_URL = process.env.AGENT_CHAT_URL ?? 'http://127.0.0.1:3200';
 const ANON_WALLET = '0x0000000000000000000000000000000000000000';
 const Body = z.object({
   network: z.string().optional(), message: z.string().trim().min(1).max(1200),
-  history: z.array(z.object({ role: z.enum(['user', 'agent']), text: z.string().max(1600) })).max(20).default([]),
+  // Earlier answers can be long (multi-scenario replies): trim them to the context size instead of refusing the message.
+  history: z.array(z.object({ role: z.enum(['user', 'agent']), text: z.string().max(50_000).transform((t) => t.slice(0, 1600)) })).max(50).transform((h) => h.slice(-20)).default([]),
 });
 
 function defaultWallet(): string | null {
@@ -33,7 +34,7 @@ export async function POST(req: Request) {
     const token = process.env.AGENT_API_TOKEN;
     if (!token) return json({ error: 'AGENT_API_TOKEN is not set on the app' }, 500);
     const b = Body.safeParse(await req.json().catch(() => null));
-    if (!b.success) return json({ error: 'a message is required' }, 400);
+    if (!b.success) return json({ error: b.error.issues.some((i) => i.path[0] === 'message') ? 'Type a message (up to 1,200 characters).' : 'The chat could not read the conversation. Press Clear chat and ask again.' }, 400);
     // The chat always reads MAINNET: bStocks and the real positions live there, whatever the venue toggle in the header says.
     const n = 'mainnet' as const;
     // No sign-in needed to chat. Signed out, the chat reads this app's own registered wallet (CHAT_DEFAULT_WALLET, else the first wallet with agent

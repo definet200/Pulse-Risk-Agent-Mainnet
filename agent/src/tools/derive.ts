@@ -1,3 +1,4 @@
+import { deriveOrderExpiry } from '../../../lib/derive-expiry';
 import { getAddress, type Address, type Hex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { DERIVE, DERIVE_MODULES, DERIVE_USDC_ASSET } from '../../../lib/venues';
@@ -155,8 +156,8 @@ export async function placeOrder(n: Network, wallet: string, creds: DeriveCreds,
   const headers = await authHeaders(owner, creds);
   const subaccountId = await subaccountForUniverse(n, owner, creds, inst.risk_universe_id);
   const immediate = o.type === 'market';
-  // signature_expiry_sec is also the order's expiry; the venue window is 1920 s .. 90 d.
-  const expirySec = Math.floor(Date.now() / 1000) + (immediate ? 2_400 : 30 * 86_400);
+  // The order's expiry may not outlive the session key (Derive error 14038).
+  const expirySec = deriveOrderExpiry(immediate, creds.expiresAt);
   const { action, signature, signer } = await signAction(n, creds, owner, subaccountId, DERIVE_MODULES.TRADE,
     encodeTradeData({ asset: inst.base_asset_address, subId: inst.base_asset_sub_id, limitPrice, amount, maxFee, recipientId: subaccountId, isBid }), expirySec);
   const r = await rpc<{ order: { order_id: string; order_status: string; filled_amount: string; average_price: string } }>(n, 'private/order', {

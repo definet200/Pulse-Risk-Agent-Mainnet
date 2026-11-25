@@ -400,15 +400,26 @@ export async function lighterOrderHistory(n: VenueNetwork, wallet: Address, limi
   const out: HistoryRow[] = [];
   for (const a of accts.slice(0, 6)) {
     const { token, acct } = await lighterAuthToken(n, wallet, a);
-    const j = await lighterGet<{ orders?: (LighterOrderView & { market_symbol?: string; filled_base_amount: string; filled_quote_amount: string; timestamp: number })[] }>(
+    const j = await lighterGet<{ orders?: (LighterOrderView & { order_id?: string; market_symbol?: string; filled_base_amount: string; filled_quote_amount: string; timestamp: number })[] }>(
       n, 'accountInactiveOrders', { account_index: acct, limit, auth: token });
+    // Transaction hash per order: Lighter puts it on each fill (trades API); a missing read just leaves it empty.
+    const hashOf = new Map<string, string>();
+    try {
+      const t = await lighterGet<{ trades?: { tx_hash?: string; bid_id_str?: string; ask_id_str?: string; bid_account_id?: number; ask_account_id?: number }[] }>(
+        n, 'trades', { account_index: acct, sort_by: 'timestamp', limit: 100, auth: token });
+      for (const tr of t.trades ?? []) {
+        if (!tr.tx_hash) continue;
+        const mine = tr.bid_account_id === acct ? tr.bid_id_str : tr.ask_account_id === acct ? tr.ask_id_str : undefined;
+        if (mine && !hashOf.has(mine)) hashOf.set(mine, tr.tx_hash);
+      }
+    } catch { /* no hashes this time */ }
     for (const o of j.orders ?? []) {
       const filled = Number(o.filled_base_amount);
       out.push({
         venue: 'lighter', time: o.timestamp < 1e12 ? o.timestamp * 1000 : o.timestamp, market: o.market_symbol ? `${o.market_symbol}-PERP` : `market ${o.market_index}`,
         side: o.is_ask ? 'sell' : 'buy', type: o.type, size: o.initial_base_amount, filled: o.filled_base_amount,
         avgPrice: filled > 0 ? (Number(o.filled_quote_amount) / filled).toString() : null,
-        status: o.status, account: a === Number(row.account_ref) ? `Main #${a}` : `Sub #${a}`, txHash: null,
+        status: o.status, account: a === Number(row.account_ref) ? `Main #${a}` : `Sub #${a}`, txHash: hashOf.get(String(o.order_id ?? (o as { order_index?: number }).order_index)) ?? null,
       });
     }
   }

@@ -4,7 +4,7 @@ import clsx from 'clsx';
 import { useVenueNetwork } from '@/lib/network';
 import { useSession } from '@/lib/session';
 import { getJson } from '@/lib/hooks/useVenues';
-import { statusLabel, type HistoryRow, type HistoryVenue } from '@/lib/order-history';
+import { shortHash, statusLabel, txUrl, type HistoryRow, type HistoryVenue } from '@/lib/order-history';
 
 const VENUE_LABEL: Record<HistoryVenue, string> = { lighter: 'Lighter', derive: 'Derive', bstocks: 'bStocks' };
 const num = (s: string | null, max = 6) => (s === null || s === '' ? '—' : Number(s).toLocaleString('en-US', { maximumFractionDigits: max }));
@@ -22,6 +22,7 @@ export function useOrderHistory(venue: HistoryVenue, on = true) {
 /** Past orders for one venue (or several, merged newest first, for the Portfolio activity list). */
 export function OrderHistory({ venues, limit = 30, showVenue = false }: { venues: HistoryVenue[]; limit?: number; showVenue?: boolean }) {
   const { wallet } = useSession();
+  const { network } = useVenueNetwork();
   const lighter = useOrderHistory('lighter', venues.includes('lighter'));
   const derive = useOrderHistory('derive', venues.includes('derive'));
   const bstocks = useOrderHistory('bstocks', venues.includes('bstocks'));
@@ -38,7 +39,7 @@ export function OrderHistory({ venues, limit = 30, showVenue = false }: { venues
         : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead><tr>{['Time', ...(showVenue ? ['Venue'] : []), 'Market', 'Side', 'Size', 'Filled', 'Avg price', 'Status'].map((h) => <th key={h} className="th whitespace-nowrap">{h}</th>)}</tr></thead>
+              <thead><tr>{['Time', ...(showVenue ? ['Venue'] : []), 'Market', 'Side', 'Size', 'Filled', 'Avg price', 'Status', 'Tx'].map((h) => <th key={h} className="th whitespace-nowrap">{h}</th>)}</tr></thead>
               <tbody>
                 {rows.map((r, i) => {
                   const st = statusLabel(r);
@@ -52,7 +53,13 @@ export function OrderHistory({ venues, limit = 30, showVenue = false }: { venues
                       <td className="td num">{num(r.filled)}</td>
                       <td className="td num">{r.avgPrice ? num(r.avgPrice, 2) : '—'}{r.venue === 'bstocks' && r.account ? <span className="ml-1 text-[11px] text-muted">{r.account}</span> : null}</td>
                       <td className={clsx('td text-xs', st.tone === 'up' ? 'text-up' : st.tone === 'down' ? 'text-down' : 'text-muted')}>
-                        {st.text}{r.txHash && <a className="ml-1 underline" target="_blank" rel="noreferrer" href={`https://bscscan.com/tx/${r.txHash}`}>tx ↗</a>}
+                        {st.text}
+                      </td>
+                      <td className="td whitespace-nowrap font-mono text-[11px]">
+                        {r.txHash ? (() => { const u = txUrl(r.venue, r.txHash, network); return u
+                          ? <a className="text-accent underline" target="_blank" rel="noreferrer" href={u} title={r.txHash}>{shortHash(r.txHash)} ↗</a>
+                          : <span className="text-muted" title={r.txHash}>{shortHash(r.txHash)}</span>; })()
+                          : <span className="text-muted">{r.venue === 'derive' && Number(r.filled) > 0 ? 'settling' : '—'}</span>}
                       </td>
                     </tr>
                   );
