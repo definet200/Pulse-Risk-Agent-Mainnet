@@ -2,8 +2,9 @@
 #   .env       app secrets + DOMAIN            (template: repo .env.example)
 #   agent.env  agent settings                  (template: repo agent/.env.example; same AGENT_API_TOKEN)
 # then:  docker compose pull && docker compose up -d
-# Images come from GHCR (built by .github/workflows/docker.yml). Pin a build with TAG=sha-xxxxxxx in .env.
-name: pulsarx
+# Images come from GHCR (built by .github/workflows/docker.yml, which also deploys here into ~/pulsarx).
+# Pin a build with TAG=sha-xxxxxxx in .env.
+name: bnb-hackathon
 
 x-logging: &logging
   driver: json-file
@@ -11,7 +12,7 @@ x-logging: &logging
 
 services:
   app:
-    image: ${REGISTRY:-ghcr.io/plusarx}/pulsarx-app:${TAG:-latest}
+    image: ${REGISTRY:-ghcr.io/plusarx}/bnb-hackathon-app:${TAG:-latest}
     env_file: .env
     environment:
       DB_PATH: /app/data/pulsarx.db
@@ -23,7 +24,7 @@ services:
 
   # Tick loop: watches accounts, posts proposals, executes approved actions (dry run unless agent.env says otherwise).
   agent:
-    image: ${REGISTRY:-ghcr.io/plusarx}/pulsarx-agent:${TAG:-latest}
+    image: ${REGISTRY:-ghcr.io/plusarx}/bnb-hackathon-agent:${TAG:-latest}
     env_file: agent.env
     environment:
       APP_API_URL: http://app:3100
@@ -37,7 +38,7 @@ services:
 
   # Chat API the app calls server-side. Always dry run; reachable only on the compose network.
   agent-chat:
-    image: ${REGISTRY:-ghcr.io/plusarx}/pulsarx-agent:${TAG:-latest}
+    image: ${REGISTRY:-ghcr.io/plusarx}/bnb-hackathon-agent:${TAG:-latest}
     command: ["node", "--import", "tsx", "src/server.ts"]
     env_file: agent.env
     environment:

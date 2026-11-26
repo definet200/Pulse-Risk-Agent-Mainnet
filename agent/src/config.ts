@@ -62,7 +62,6 @@ const Env = z.object({
   DERIVE_ETA_SEC: z.coerce.number().min(1).default(1800),
 
   AGENT_DB_PATH: z.string().default('./data/agent.db'),
-  LIGHTER_WASM_DIR: z.string().default('../vendor/lighter'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
 });
 

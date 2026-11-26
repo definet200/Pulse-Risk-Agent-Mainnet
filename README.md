@@ -14,6 +14,7 @@ An agent hedges the bStocks and moves margin from BNB to the perp/options venues
 npm install
 cp .env.example .env.local     # fill SESSION_SECRET, KEYSTORE_SECRET, AGENT_API_TOKEN (openssl rand -hex 32)
 npm run dev                    # http://localhost:3100
+npm run dev:all                # app + agent chat (3200) + agent loop, one terminal (needs agent/.env, see agent/.env.example)
 npm test                       # unit tests (planning math, signing codecs, keystore, Lighter WASM signer)
 npm run build
 ```
@@ -32,7 +33,7 @@ docker compose up -d --build
 docker compose logs -f app agent                    # https://$DOMAIN/api/health → {"db":"ok","lighterSigner":"ok"}
 ```
 
-**Without cloning the repo on the server:** `.github/workflows/docker.yml` pushes `ghcr.io/plusarx/pulsarx-app` and `pulsarx-agent` on every push to `main` (or run `deploy/push-images.sh`). On the server, put `deploy/docker-compose.yml`, `.env` and `agent.env` in one folder, `docker login ghcr.io` if the packages are private, then `docker compose pull && docker compose up -d`. To update, run the same two commands. To pin a build, set `TAG=sha-<short>` in `.env`.
+**Lightsail via GitHub Actions (how production runs):** `.github/workflows/docker.yml` builds `ghcr.io/plusarx/bnb-hackathon-app` and `bnb-hackathon-agent` on every push to `main`, then SSHes into the VM, copies `deploy/docker-compose.yml` to `~/pulsarx/`, pulls the `sha-<short>` images and restarts. One-time setup: run `deploy/lightsail-setup.sh` on the VM, put `.env` and `agent.env` in `~/pulsarx/`, and add the repo secrets `LIGHTSAIL_HOST`, `LIGHTSAIL_SSH_KEY` (the .pem contents) and optionally `LIGHTSAIL_USER` (default `ubuntu`) and `LIGHTSAIL_KNOWN_HOSTS`. To deploy by hand instead, run `deploy/push-images.sh`, then on the VM `cd ~/pulsarx && docker compose pull && docker compose up -d`. To pin a build, set `TAG=sha-<short>` in `.env`.
 
 HTTPS is required: in production the session cookie is `Secure`. If you have no domain, use `DOMAIN=<static-ip>.sslip.io`. Back up the volumes, because `app-data` holds the encrypted agent keys and losing `KEYSTORE_SECRET` makes them unreadable.
 

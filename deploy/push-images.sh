@@ -16,9 +16,9 @@ docker buildx build --platform linux/amd64 --push \
   --build-arg NEXT_PUBLIC_ETH_RPC_URL="${NEXT_PUBLIC_ETH_RPC_URL:-}" \
   --build-arg NEXT_PUBLIC_ARB_RPC_URL="${NEXT_PUBLIC_ARB_RPC_URL:-}" \
   --build-arg NEXT_PUBLIC_SEPOLIA_RPC_URL="${NEXT_PUBLIC_SEPOLIA_RPC_URL:-}" \
-  -t "$REGISTRY/pulsarx-app:$TAG" -f Dockerfile .
+  -t "$REGISTRY/bnb-hackathon-app:$TAG" -f Dockerfile .
 
 docker buildx build --platform linux/amd64 --push \
-  -t "$REGISTRY/pulsarx-agent:$TAG" -f agent/Dockerfile .
+  -t "$REGISTRY/bnb-hackathon-agent:$TAG" -f agent/Dockerfile .
 
-echo "Pushed $REGISTRY/pulsarx-app:$TAG and $REGISTRY/pulsarx-agent:$TAG"
+echo "Pushed $REGISTRY/bnb-hackathon-app:$TAG and $REGISTRY/bnb-hackathon-agent:$TAG"

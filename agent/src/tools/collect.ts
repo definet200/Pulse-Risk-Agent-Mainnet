@@ -139,7 +139,7 @@ export async function collectSnapshot(wallet: string, network: Network, userCfg:
         if (!deriveCreds) { health[rk] = derive.healthOf(null); continue; }
         const id = rule.accountRef ? Number(rule.accountRef) : deriveCreds.subaccountId;
         health[rk] = derive.healthOf(await deps.deriveSubaccount(network, wallet, deriveCreds, id));
-      } else continue;   // dormant Lighter rule: not read; the planner reports it
+      } else continue;   // a rule saved for any other venue is not read; the planner reports it
       if (!health[rk].connected) dq.push(`${rk} account not found: check the Derive subaccount (no deposit was sent)`);
     } catch (e) { dq.push(`${rk} unreadable: ${msg(e)}`); health[rk] = { connected: false, utilBps: null, accountUsd: null, usedUsd: null }; }
   }

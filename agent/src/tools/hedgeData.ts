@@ -72,7 +72,7 @@ export async function collectHedgeData(n: Network, wallet: string, hedge: AgentC
         out.mins[key] = { minBase: m.minBase, step: m.step, minNotionalUsd: m.minNotionalUsd };
         return;
       }
-      if (leg.venue !== 'derive') return;   // dormant Lighter legs are not traded
+      if (leg.venue !== 'derive') return;   // only Derive legs are priced here; perps legs were handled above
       if (!deriveCreds) return;
       const inst = `${leg.market}-PERP`;
       const t = await deps.deriveTicker(n, inst);

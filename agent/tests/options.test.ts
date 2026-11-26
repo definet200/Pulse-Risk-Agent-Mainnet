@@ -84,7 +84,7 @@ describe('put hedges on Derive', () => {
     expect(c.plan!.marginPlan?.to).toMatch(/Derive/); expect(c.plan!.marginPlan!.moveUsd).toBeGreaterThan(0);
   });
   it('spec scenario 3: a bridge slower than the event gives a partial put from the collateral already on Derive', () => {
-    const s = snap({ deriveFree: { ref: '42', freeUsd: 60 }, deriveEtaSec: 1500, perpEtaSec: 1500, perpMain: { equityUsd: 0, freeUsd: 0 } });   // neither bridge lands in time and Lighter has no margin
+    const s = snap({ deriveFree: { ref: '42', freeUsd: 60 }, deriveEtaSec: 1500, perpEtaSec: 1500, perpMain: { equityUsd: 0, freeUsd: 0 } });   // neither bridge lands in time and perps has no margin
     s.config.events = [{ ticker: 'NVDA', at: hours(0.33), kind: 'earnings', gapPct: 12 }];
     const c = buildCandidates(s).candidates.find((x) => x.kind === 'hedge')!;
     expect(c.plan!.marginPlan).toBeNull(); expect(c.plan!.cost.premiumUsd + c.plan!.cost.feesUsd).toBeLessThanOrEqual(60 + 0.01);

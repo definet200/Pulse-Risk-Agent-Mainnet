@@ -12,7 +12,7 @@ import * as pancake from './pancake';
 import * as store from './store';
 import { haircutFor } from './integrity';
 
-// Margin top-up BNB wallet -> Aster futures, all on BNB Chain (no bridge). Replaces the Relay-to-Lighter path.
+// Margin top-up BNB wallet -> Aster futures, all on BNB Chain (no bridge).
 //  1. gas check (agent BNB) BEFORE anything is pulled
 //  2. pull USDT / USDC / allowed bStocks from the user to the agent wallet (existing allowance-based pulls)
 //  3. sell bStocks for USDC, then swap all USDC to USDT on PancakeSwap (0.01% pool)
