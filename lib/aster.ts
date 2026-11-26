@@ -65,7 +65,8 @@ const ADDR = /^0x[0-9a-fA-F]{40}$/;
 export function agentApprovalMessage(n: AsterNetwork, a: AgentApproval): string {
   if (!ADDR.test(a.user) || !ADDR.test(a.agentAddress)) throw new Error('Aster approval: user and agent must be addresses');
   if (!/^\d+$/.test(a.nonce)) throw new Error('Aster approval: nonce must be digits');
-  const name = a.agentName ?? ASTER_AGENT_NAME;
+  // Aster replaces an earlier agent that has the SAME name, so each key gets its own name (a second instance must not revoke the first).
+  const name = a.agentName ?? `${ASTER_AGENT_NAME}-${a.agentAddress.slice(-6).toLowerCase()}`;
   if (!/^[A-Za-z0-9._-]{1,32}$/.test(name)) throw new Error('Aster approval: bad agent name');
   // Field order is what Aster rebuilds and hashes. canWithdraw is always false: the agent can never move funds out.
   return `user=${a.user.toLowerCase()}&nonce=${a.nonce}&agentName=${name}&agentAddress=${a.agentAddress.toLowerCase()}&expired=${a.expiredMs}`
