@@ -6,6 +6,7 @@ import { collectSnapshot } from './tools/collect';
 import { proposeForWallet } from './proposal/propose';
 import { openStore } from './tools/store';
 import { runApproved } from './tools/approved';
+import { sweepFallbackSafe } from './tools/fallbackSweep';
 import { buildLastRun, buildStatus } from './status';
 import { agentAddress, publicClient } from './tools/bsc';
 import { agentEthBalance } from './tools/deriveFunding';
@@ -44,6 +45,9 @@ export async function tick(graph = buildGraph(), opts: { forceProposal?: boolean
   const wallets = await app.listWallets(c.AGENT_NETWORK);
   for (const w of wallets) {
     const lk = `${w.wallet}:${c.AGENT_NETWORK}`;
+    // Money stuck in the Derive fallback subaccount is swept to the main one even when automatic checks are off (its own
+    // 5-minute timer): on its own in Auto mode, as an Approve request in Confirm mode. Needs only the wallet's settings.
+    await sweepFallbackSafe({ wallet: w.wallet, network: c.AGENT_NETWORK, config: w.config } as unknown as Snapshot);
     if (!opts.all) {
       let waiting = false;
       try { waiting = (await app.listActions(w.wallet, c.AGENT_NETWORK, 'approved')).length > 0; } catch { /* checked on the next wake */ }
