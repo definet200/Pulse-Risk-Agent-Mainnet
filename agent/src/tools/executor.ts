@@ -212,11 +212,16 @@ export async function execute(s: Snapshot, c: Candidate): Promise<StepResult[]> 
     const sell = h.deltaToShort > 0;
     const before = (await aster.getPositions(net, creds))[h.market] ?? 0;
     const qtys = h.orderQtys && h.orderQtys.length > 1 ? h.orderQtys : [Math.abs(h.deltaToShort)];
+    // A trade the user asked for in chat may carry a leverage: set it on the market first (once; the venue refuses an invalid value).
+    if (c.chat && h.leverage && !h.reduceOnly) {
+      const lev = h.leverage;
+      if (!(await once(`${k}:leverage`, `Set ${h.market} leverage to ${lev}x`, async () => { await aster.setLeverage(net, creds, h.market, lev); return `${lev}x`; }, out))) return out;
+    }
     for (let i = 0; i < qtys.length; i++) {
       const sk = qtys.length > 1 ? `${k}:order${i}` : `${k}:order`;
-      // Buying back a short is reduce-only, so a stale plan can never flip the account long.
       const placed = await once(sk, qtys.length > 1 ? `Perps hedge order ${i + 1} of ${qtys.length}` : 'Perps hedge order', async () => {
-        const r = await aster.placeMarketOrder(net, creds, { ticker: h.market, side: sell ? 'sell' : 'buy', qty: qtys[i], reduceOnly: !sell, clientOrderId: `pr${sk.replace(/[^A-Za-z0-9]/g, '').slice(-30)}` });
+        // Agent hedges: a buy only ever closes a short. Chat trades: a buy opens a long unless the user asked to close.
+        const r = await aster.placeMarketOrder(net, creds, { ticker: h.market, side: sell ? 'sell' : 'buy', qty: qtys[i], reduceOnly: c.chat ? !!h.reduceOnly : !sell, clientOrderId: `pr${sk.replace(/[^A-Za-z0-9]/g, '').slice(-30)}` });
         return `${r.orderId} ${r.status} ${r.executedQty}/${r.qty}${r.avgPrice ? ` at ${r.avgPrice}` : ''}`;
       }, out);
       if (!placed) return out;

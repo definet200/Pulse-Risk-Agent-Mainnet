@@ -6,7 +6,8 @@ import { deriveUniverses, listSubaccounts } from '../tools/derive';
 import { fundCandidate, fundRequest, resolveRule, ruleLabel, toBase, type ChatFundSpec } from './fund';
 import { ruleKey } from '../../../lib/risk-rules';
 import { checkCandidate } from '../tools/guard';
-import { postActionToApp } from '../tools/appApi';
+import * as asterTools from '../tools/aster';
+import { getAsterCreds, postActionToApp } from '../tools/appApi';
 import { payoff, type Payoff } from '../risk/payoff';
 import { quotePut } from '../risk/putQuote';
 import { deriveCurrencyOf, liveOptionNames } from '../risk/options';
@@ -265,14 +266,35 @@ function makeTools(ctx: Ctx): StructuredToolInterface[] {
       } catch (e) { return ok(ctx, [{ label: `Derive ${t} put`, value: `could not be priced just now (${e instanceof Error ? e.message : String(e)})` }]); }
     }, { name: 'price_derive_put', description: "Price a protective put on Derive LIVE for one ticker: reads the order book and returns the instrument, contracts, premium, fees, Derive's minimum size, and the payoff before and after (the chat draws it). Defaults: the user's holding value, an at-the-money strike, the first expiry at least 7 days out. Use whenever the user asks what a put costs or to compare a put with a perp.", schema: z.object({ ticker: z.string().max(10), notionalUsd: z.number().positive().max(10_000_000).optional(), strikePct: z.number().min(50).max(120).optional(), minDays: z.number().min(1).max(45).optional() }) }),
 
-    tool(async ({ venue: v, instrument, side, amount }: { venue: 'perps' | 'derive'; instrument: string; side: 'buy' | 'sell'; amount: number }) => {
+    tool(async ({ venue: v, instrument, side, amount: amount0, leverage, marginUsd, close }: { venue: 'perps' | 'derive'; instrument: string; side: 'buy' | 'sell'; amount?: number; leverage?: number; marginUsd?: number; close?: boolean }) => {
       const venue = v === 'derive' ? 'derive' as const : 'aster' as const;
-      ctx.steps.push({ tool: 'propose_trade', label: `Prepared ${side} ${amount} ${instrument} for your approval` });
+      ctx.steps.push({ tool: 'propose_trade', label: `Prepared ${side} ${amount0 ?? `$${marginUsd} margin`} ${instrument}${leverage ? ` at ${leverage}x` : ''} for your approval` });
       if (!ctx.req.signedIn) return ok(ctx, [{ label: 'Trade request', value: 'not created: you are not signed in. Sign in with your wallet, then ask again.' }]);
       try {
         const s = await ctx.ensureSnapshot();
         if (ctx.source !== 'live') return ok(ctx, [{ label: 'Trade request', value: 'not created: your live accounts could not be read' }]);
-        const spec0 = await specFrom(s.network, { venue, instrument, side, amount });
+        if (venue === 'derive' && (leverage || marginUsd)) return ok(ctx, [{ label: 'Trade request', value: 'not created: leverage and margin sizing apply to perps only' }]);
+        // Leverage (perps): within the market's own maximum and the user's cap (Limits on the Risk page).
+        let amount = amount0 ?? 0;
+        if (venue === 'aster' && (leverage || marginUsd)) {
+          const lev = leverage ?? s.config.limits.maxLeverage;
+          if (!Number.isInteger(lev) || lev < 1) return ok(ctx, [{ label: 'Trade request', value: 'not created: leverage must be a whole number, 1 or more' }]);
+          const t = instrument.trim().toUpperCase().replace(/-PERP$/, '').replace(/USDT$/, '');
+          const creds = await getAsterCreds(s.wallet, s.network);
+          const max = await withTimeout(asterTools.maxLeverage(s.network, creds, t), 15_000, 'perps');
+          if (lev > max) return ok(ctx, [{ label: 'Trade request', value: `not created: ${t} allows at most ${max}x leverage` }]);
+          if (lev > s.config.limits.maxLeverage) return ok(ctx, [{ label: 'Trade request', value: `not created: ${lev}x is above your max leverage of ${s.config.limits.maxLeverage}x. Raise "Max leverage" under Limits on the Risk page (up to ${max}x on ${t}), then ask again` }]);
+          // "$1 at 20x": size = margin x leverage / price, rounded down to the market's step.
+          if (!amount0 && marginUsd) {
+            const m = await asterTools.market(s.network, t); const px = await asterTools.markPrice(s.network, t);
+            amount = Math.floor(((marginUsd * lev) / px) / m.stepSize + 1e-9) * m.stepSize;
+            amount = Number(amount.toFixed(Math.max(0, Math.round(-Math.log10(m.stepSize)))));
+            if (!(amount > 0)) return ok(ctx, [{ label: 'Trade request', value: `not created: $${marginUsd} at ${lev}x is below the smallest ${t} size` }]);
+          }
+          leverage = lev;
+        }
+        if (!(amount > 0)) return ok(ctx, [{ label: 'Trade request', value: 'not created: give a size, or for perps a margin in dollars with a leverage' }]);
+        const spec0 = await specFrom(s.network, { venue, instrument, side, amount, ...(venue === 'aster' && leverage ? { leverage } : {}), ...(venue === 'aster' && close ? { reduceOnly: true } : {}) });
         const q = await withTimeout(quoteSpec(s.network, spec0), 20_000, venue === 'derive' ? 'Derive' : 'perps');
         const spec = { ...spec0, quotedPrice: q.price };
         const { post, payoff: po } = chatTradeRequest(s, spec, q);
@@ -285,7 +307,7 @@ function makeTools(ctx: Ctx): StructuredToolInterface[] {
         if (po) { const d = po.points.find((x) => x.movePct === -20); const u = po.points.find((x) => x.movePct === 20); if (d && u) items.push({ label: `${po.ticker} payoff with this trade`, value: `at -20%: ${d.beforeUsd} before vs ${d.afterUsd} after; at +20%: ${u.beforeUsd} vs ${u.afterUsd} (USD)` }); }
         return ok(ctx, items, 'The request card with Approve and Reject is shown below the answer.');
       } catch (e) { return ok(ctx, [{ label: 'Trade request', value: `not created: ${e instanceof Error ? e.message : String(e)}` }]); }
-    }, { name: 'propose_trade', description: "Turn a position the user asks for into a real order request in their account, shown with Approve and Reject. Use it when they ask you to take, place, open, buy, sell, short or close a position (e.g. 'buy that NVDA put', 'short 0.07 NVDA perp'). derive: buy a put (exact instrument name such as NVDA-20261204-133-P, from price_derive_put) or trade a perp (NVDA-PERP). perps: a perp by ticker (NVDA, traded as NVDAUSDT; $5 minimum order); sell opens or adds to a short, buy only buys back a short (reduce-only). amount = contracts (derive) or units (perps). Nothing executes until the user presses Approve.", schema: z.object({ venue: z.enum(['perps', 'derive']), instrument: z.string().min(2).max(40), side: z.enum(['buy', 'sell']), amount: z.number().positive().max(1_000_000) }) }),
+    }, { name: 'propose_trade', description: "Turn a position the user asks for into a real order request in their account, shown with Approve and Reject. Use it when they ask you to take, place, open, buy, sell, short or close a position (e.g. 'buy that NVDA put', 'short 0.07 NVDA perp'). derive: buy a put (exact instrument name such as NVDA-20261204-133-P, from price_derive_put) or trade a perp (NVDA-PERP). perps: a perp by ticker (NVDA, traded as NVDAUSDT; $5 minimum order); sell opens or adds to a short, buy only buys back a short (reduce-only). amount = contracts (derive) or units (perps). Nothing executes until the user presses Approve. For perps the user may set leverage ('long NVDA with $1 at 20x', 'short 0.1 BTC at 5x'): pass `leverage` (whole number) and either `amount` (units) or `marginUsd` (dollars of margin; size = margin x leverage / price). Pass `close: true` when they ask to close or reduce a position (reduce-only); otherwise a buy opens a long. Leverage is checked against the market maximum and their own max-leverage limit.", schema: z.object({ venue: z.enum(['perps', 'derive']), instrument: z.string().min(2).max(40), side: z.enum(['buy', 'sell']), amount: z.number().positive().max(1_000_000).optional(), leverage: z.number().int().min(1).max(125).optional(), marginUsd: z.number().positive().max(1_000_000).optional(), close: z.boolean().optional() }) }),
 
     tool(async () => {
       ctx.steps.push({ tool: 'get_derive_subaccounts', label: 'Read your Derive subaccounts' });

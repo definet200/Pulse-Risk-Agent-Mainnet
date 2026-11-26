@@ -24,6 +24,10 @@ export interface ChatTradeSpec {
   quotedPrice: number;
   /** Underlying ticker, e.g. NVDA. */
   ticker: string;
+  /** Perps only: leverage the user asked for, set on the market just before the order (1..market max, within their cap). */
+  leverage?: number;
+  /** Perps only: the user asked to close/reduce (reduce-only). A buy without it opens a long. */
+  reduceOnly?: boolean;
 }
 
 export interface LiveQuote { price: number; index: number; notionalUsd: number; costUsd: number }
@@ -60,7 +64,7 @@ export async function quoteSpec(n: Network, spec: ChatTradeSpec): Promise<LiveQu
 }
 
 /** Resolve what the user named into a spec (perps: NVDA / NVDA-PERP / NVDAUSDT → NVDAUSDT; Derive kind from the name). */
-export async function specFrom(n: Network, a: { venue: 'aster' | 'derive'; instrument: string; side: 'buy' | 'sell'; amount: number }): Promise<ChatTradeSpec> {
+export async function specFrom(n: Network, a: { venue: 'aster' | 'derive'; instrument: string; side: 'buy' | 'sell'; amount: number; leverage?: number; reduceOnly?: boolean }): Promise<ChatTradeSpec> {
   const name = a.instrument.trim().toUpperCase();
   if (a.venue === 'derive') {
     const put = PUT.exec(name);
@@ -72,7 +76,7 @@ export async function specFrom(n: Network, a: { venue: 'aster' | 'derive'; instr
   const ticker = name.replace(/-PERP$/, '').replace(/USDT$/, '');
   const mk = (await aster.markets(n)).find((x) => x.ticker === ticker);
   if (!mk) throw new Error(`the perps venue lists no ${ticker} perp`);
-  return { venue: 'aster', instrument: asterSymbol(ticker), kind: 'perp', side: a.side, amount: a.amount, quotedPrice: 0, ticker };
+  return { venue: 'aster', instrument: asterSymbol(ticker), kind: 'perp', side: a.side, amount: a.amount, quotedPrice: 0, ticker, ...(a.leverage ? { leverage: a.leverage } : {}), ...(a.reduceOnly ? { reduceOnly: true } : {}) };
 }
 
 /** The candidate the executor runs, built from the approved spec (never from the planner). */
@@ -86,7 +90,8 @@ export function candidateFromSpec(spec: ChatTradeSpec, q: LiveQuote, key: string
     hedge: spec.venue === 'derive'
       ? { bstock: `${spec.ticker}B`, market: spec.ticker, deltaToShort: spec.kind === 'put' ? spec.amount : short ? spec.amount : -spec.amount, driftPct: 100, ticker: spec.ticker, venue: 'derive', kind: spec.kind,
         instrument: spec.kind, key: spec.kind === 'put' ? `derive-put:${spec.ticker}` : `derive-perp:${spec.ticker}`, derive: { instrument: spec.instrument } }
-      : { bstock: `${spec.ticker}B`, market: spec.ticker, deltaToShort: short ? spec.amount : -spec.amount, driftPct: 100, ticker: spec.ticker, venue: 'aster', kind: 'perp', key: `aster:${spec.ticker}` },
+      : { bstock: `${spec.ticker}B`, market: spec.ticker, deltaToShort: short ? spec.amount : -spec.amount, driftPct: 100, ticker: spec.ticker, venue: 'aster', kind: 'perp', key: `aster:${spec.ticker}`,
+        ...(spec.leverage ? { leverage: spec.leverage } : {}), reduceOnly: !!spec.reduceOnly },
   } as Candidate;
 }
 
@@ -100,14 +105,15 @@ export function chatTradeRequest(s: Snapshot, spec: ChatTradeSpec, q: LiveQuote,
   const chosen = spec.venue === 'derive' ? (spec.kind === 'put' ? 'put' : null) : 'perp';
   const alts = held > 0 ? venueAlternatives(s, spec.ticker, chosen) : [];
   const verb = spec.side === 'buy' ? 'Buy' : 'Sell';
-  const title = `${verb} ${spec.amount} ${spec.instrument}${spec.venue === 'derive' ? ' on Derive' : ' perp'} (you asked in chat)`;
+  const lev = spec.venue === 'aster' && spec.leverage ? spec.leverage : null;
+  const title = `${spec.reduceOnly ? 'Close ' : ''}${verb} ${spec.amount} ${spec.instrument}${spec.venue === 'derive' ? ' on Derive' : ' perp'}${lev ? ` at ${lev}x` : ''} (you asked in chat)`;
   const key = `act-chat-${createHash('sha256').update(`${s.wallet.toLowerCase()}|${s.network}|${spec.venue}|${spec.instrument}|${spec.side}|${spec.amount}|${Math.floor(now / 600_000)}`).digest('hex').slice(0, 20)}`;
   const post: ActionPost = {
     wallet: s.wallet, network: s.network, kind: 'hedge', venue: spec.venue, origin: 'chat', slot: `chat:${spec.venue}:${spec.instrument}`.slice(0, 60),
     title: title.slice(0, 160),
     why: `You asked for this in the chat. Live quote now: ${spec.side === 'buy' ? 'ask' : 'bid'} $${q.price}${spec.kind === 'put' ? `, premium about $${q.costUsd} plus fees` : `, notional about $${q.notionalUsd}`}. On approval the agent re-quotes it and refuses if the price is more than 25% worse, and your caps and kill switch still apply.`.slice(0, 800),
     helps: (spec.kind === 'put' ? `Caps your ${spec.ticker} loss below the strike and keeps the upside.` : spec.side === 'sell' ? `Offsets moves in your ${spec.ticker} 1:1.` : `Reduces or closes your ${spec.ticker} short.`).slice(0, 500),
-    willDo: [`place a ${spec.venue === 'derive' ? 'Derive' : 'perps'} market order${spec.venue === 'aster' && spec.side === 'buy' ? ' (reduce-only)' : ''}: ${verb.toLowerCase()} ${spec.amount} ${spec.instrument}`, 'check that the resulting position matches the order'],
+    willDo: [...(lev ? [`set ${spec.ticker} leverage to ${lev}x (margin about $${r2(q.notionalUsd / lev)} for this order)`] : []), `place a ${spec.venue === 'derive' ? 'Derive' : 'perps'} market order${spec.venue === 'aster' && spec.reduceOnly ? ' (reduce-only)' : ''}: ${verb.toLowerCase()} ${spec.amount} ${spec.instrument}`, 'check that the resulting position matches the order'],
     detail: { candidateId: `chat:${spec.instrument}`, kind: 'hedge', ruleKey: null, amountBaseUnit: '0', hedgeMarket: spec.ticker, hedgeKey: null, hedgeDelta: null, optionContracts: null, chatTrade: { ...spec, quotedPrice: q.price } },
     ...(po ? { payoff: po } : {}), ...(alts.length ? { alternatives: alts } : {}),
     idempotencyKey: key,

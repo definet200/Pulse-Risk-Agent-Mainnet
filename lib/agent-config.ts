@@ -87,7 +87,8 @@ export const Limits = z.object({
   maxNotionalPerTradeUsd: z.number().min(0).max(10_000_000),
   maxNotionalPerDayUsd: z.number().min(0).max(100_000_000),
   /** Cap on perp leverage. The agent also caps it so that (p99 gap x leverage) stays under ~30% of margin. */
-  maxLeverage: z.number().min(1).max(10),
+  /** Your cap on leverage (agent hedges and chat trades). Each market's own maximum still applies (NVDA 20x). */
+  maxLeverage: z.number().min(1).max(125),
   /** Stop autonomous actions once the account has lost this much since the start of the day. */
   dailyLossCapUsd: z.number().min(0).max(100_000_000),
   /** Most idle margin the user will park on Lighter and Derive. */

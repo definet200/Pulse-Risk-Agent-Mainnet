@@ -211,6 +211,18 @@ export async function cancelOrder(n: Network, c: AsterCreds, ticker: string, ord
   await signed(n, c, 'DELETE', '/fapi/v3/order', { symbol: asterSymbol(ticker), orderId });
 }
 
+const maxLevCache = new Map<string, { at: number; max: number }>();
+/** Highest leverage the venue allows on this market for a fresh position (bracket 1 of /fapi/v3/leverageBracket; NVDA 20x live 2026-11-26). */
+export async function maxLeverage(n: Network, c: AsterCreds, ticker: string): Promise<number> {
+  const symbol = asterSymbol(ticker); const k = `${n}:${symbol}`; const hit = maxLevCache.get(k);
+  if (hit && Date.now() - hit.at < 3_600_000) return hit.max;
+  const r = await signed<{ symbol?: string; brackets: { initialLeverage: number }[] }[] | { brackets: { initialLeverage: number }[] }>(n, c, 'GET', '/fapi/v3/leverageBracket', { symbol });
+  const row = Array.isArray(r) ? r.find((x) => x.symbol === symbol) ?? r[0] : r;
+  const max = Math.max(1, ...(row?.brackets ?? []).map((b) => Number(b.initialLeverage) || 1));
+  maxLevCache.set(k, { at: Date.now(), max });
+  return max;
+}
+
 export async function setLeverage(n: Network, c: AsterCreds, ticker: string, leverage: number): Promise<void> {
   if (!config().live) throw new Error('Aster leverage called while not live');
   await signed(n, c, 'POST', '/fapi/v3/leverage', { symbol: asterSymbol(ticker), leverage: Math.max(1, Math.floor(leverage)) });

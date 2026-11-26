@@ -21,7 +21,7 @@ const NUM: { group: 'risk' | 'limits'; key: string; label: string; min: number; 
   { group: 'risk', key: 'eventLeadHours', label: 'Hedge ahead of events by', min: 1, max: 168, unit: 'hours' },
   { group: 'limits', key: 'maxNotionalPerTradeUsd', label: 'Max size per trade', min: 0, max: 10_000_000, unit: 'USD' },
   { group: 'limits', key: 'maxNotionalPerDayUsd', label: 'Max traded per day', min: 0, max: 100_000_000, unit: 'USD' },
-  { group: 'limits', key: 'maxLeverage', label: 'Max leverage', min: 1, max: 10, unit: 'x' },
+  { group: 'limits', key: 'maxLeverage', label: 'Max leverage', min: 1, max: 125, unit: 'x' },
   { group: 'limits', key: 'dailyLossCapUsd', label: 'Daily loss cap', min: 0, max: 100_000_000, unit: 'USD' },
   { group: 'limits', key: 'maxCapitalOffBnbUsd', label: 'Max capital off BNB', min: 0, max: 100_000_000, unit: 'USD' },
 ];

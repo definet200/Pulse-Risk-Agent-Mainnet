@@ -55,6 +55,7 @@ export function policyCheck(c: Candidate, s: Snapshot, now = new Date()): Policy
     const day = t?.notionalUsd ?? 0;
     if (day + n > lim.maxNotionalPerDayUsd) return { block: `would take today's hedge notional to ${usd(day + n)}, above your daily max (${usd(lim.maxNotionalPerDayUsd)})`, confirm: null };
     if (c.plan?.leverage && c.plan.leverage > lim.maxLeverage + 1e-9) return { block: `leverage ${c.plan.leverage}x is above your cap of ${lim.maxLeverage}x`, confirm: null };
+    if (c.chat && h.leverage && h.leverage > lim.maxLeverage + 1e-9) return { block: `leverage ${h.leverage}x is above your max leverage of ${lim.maxLeverage}x (raise it under Limits on the Risk page)`, confirm: null };
     const mp = c.plan?.marginPlan;
     if (mp && parkedOffBnb(s) + mp.moveUsd > lim.maxCapitalOffBnbUsd) return { block: `moving ${usd(mp.moveUsd)} would put ${usd(parkedOffBnb(s) + mp.moveUsd)} off BNB, above your cap (${usd(lim.maxCapitalOffBnbUsd)})`, confirm: null };
     const conflict = h.ticker ? s.eventConflicts?.[h.ticker] : undefined;
