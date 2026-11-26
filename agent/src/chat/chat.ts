@@ -23,6 +23,7 @@ import { readPrompt } from '../llm/prompts';
 import * as app from '../tools/appApi';
 import { collectSnapshot } from '../tools/collect';
 import { integrityDetail } from '../tools/integrity';
+import { callCmc } from '../tools/cmc';
 import { assessRisk } from '../risk/plan';
 import { buildStatus } from '../status';
 import type { Snapshot } from '../types';
@@ -188,6 +189,12 @@ function makeTools(ctx: Ctx): StructuredToolInterface[] {
       const s = await ctx.ensureSnapshot();
       return ok(ctx, integrityDetail(s));
     }, { name: 'get_price_integrity', description: "Read-only. Price integrity of the user's bStock collateral: for each held token the Atlas oracle price (age, consensus), the CoinMarketCap DEX price and pool liquidity, the stock's perp price, the gaps between them, the verdict (ok, watch, block, unavailable) and the collateral haircut used. Use for 'can I trust the price of NVDAB', 'why is my haircut higher', 'why will the agent not hedge'. If it says the layer is off, say so.", schema: z.object({}) }),
+
+    tool(async ({ kind, symbol }: { kind: 'stock_events' | 'market_overview' | 'derivatives_overview'; symbol?: string }) => {
+      ctx.steps.push({ tool: 'get_cmc_data', label: 'Read CoinMarketCap data' });
+      const r = await callCmc(kind, { symbol });
+      return ok(ctx, [{ label: 'CoinMarketCap', value: r.ok ? r.text : `unavailable: ${r.reason}` }]);
+    }, { name: 'get_cmc_data', description: "Read-only CoinMarketCap data. kind 'stock_events' (needs symbol, a US stock ticker like NVDA): scheduled events in the next 7 days such as earnings, which is when a stock can gap; use it for 'is there an event before I hedge NVDA', 'when are NVDA earnings'. kind 'market_overview': whole-crypto-market snapshot, for BTC/ETH context. kind 'derivatives_overview': crypto futures and perpetuals open interest. If it says it is not set up or unavailable, say so plainly and do not guess the data.", schema: z.object({ kind: z.enum(['stock_events', 'market_overview', 'derivatives_overview']), symbol: z.string().max(8).optional() }) }),
 
     tool(async ({ limit }: { limit?: number }) => {
       ctx.steps.push({ tool: 'get_activity', label: 'Read recent activity' }); ctx.ui.showActivity = true;

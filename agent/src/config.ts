@@ -43,6 +43,8 @@ const Env = z.object({
   RELAY_API_KEY: z.string().default(''),
   /** Atlas oracle key for the price-integrity layer. Optional: without it Atlas is simply not read. */
   ATLAS_API_KEY: z.string().default(''),
+  /** CoinMarketCap MCP key (free Basic tier). Optional: without it the chat agent says CMC data is not set up. */
+  CMC_API_KEY: z.string().default(''),
 
   // News-driven hedging (free RSS sources, no API key). Headlines are cached so the 30 s loop does not refetch.
   NEWS_TTL_SEC: z.coerce.number().int().min(30).default(600),
