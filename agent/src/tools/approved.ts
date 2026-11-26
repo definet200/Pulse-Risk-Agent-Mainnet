@@ -8,6 +8,9 @@ import * as app from './appApi';
 import { filterCandidates } from './guard';
 import { buildCandidates } from './planner';
 import { candidateFromSpec, priceStillOk, quoteSpec, type ChatTradeSpec } from '../chat/trade';
+import { moveProblems, type ChatMoveSpec } from '../chat/move';
+import { fundCandidate, type ChatFundSpec } from '../chat/fund';
+import { listSubaccounts, transferSpot } from './derive';
 
 // Runs requests the user approved (confirmation mode). The approval says "do this kind of move"; the numbers are
 // re-planned from fresh data and re-checked by the guard, so an old approval can never push a stale or oversized move.
@@ -34,6 +37,26 @@ function withinAsked(a: ActionRow, c: Candidate): boolean {
   return near(Number(BigInt(d.amountBaseUnit ?? '0')), Number(BigInt(c.amountBaseUnit)));
 }
 
+// A margin move that already went out but whose acknowledgement failed: never send it a second time, only retry the acknowledgement.
+const moved = new Map<number, string>();
+/** Tests only: action ids restart in every test. */
+export const clearMovedForTests = () => moved.clear();
+
+/** A margin move the user asked for in the chat and approved: both balances re-read, the same checks as when it was requested, then exactly the approved amount. */
+async function runMove(snapshot: Snapshot, a: ActionRow, spec: ChatMoveSpec, ack: (a: ActionRow, s: 'executed' | 'failed' | 'expired', m: string) => Promise<unknown>) {
+  const done = moved.get(a.id); if (done) { await ack(a, 'executed', done); return; }
+  try {
+    const creds = await app.getDeriveCreds(snapshot.wallet, snapshot.network);
+    const subs = await listSubaccounts(snapshot.network, snapshot.wallet, creds);
+    const problems = moveProblems(subs, spec, snapshot.config.limits);
+    if (problems.length) { await ack(a, 'failed', `Not moved: ${problems.join('; ')}. Nothing was moved.`); return; }
+    if (!config().live) { await ack(a, 'executed', `Dry run, no money moved. It would have moved ${spec.amountUsd} USDC from ${spec.fromLabel} to ${spec.toLabel} on Derive.`); return; }
+    const { opUuid } = await transferSpot(snapshot.network, snapshot.wallet, creds, spec.fromId, spec.toId, spec.amountUsd);
+    const msg = `Done. Moved ${spec.amountUsd} USDC from ${spec.fromLabel} to ${spec.toLabel} on Derive${opUuid ? ` (operation ${opUuid})` : ''}.`;
+    moved.set(a.id, msg); await ack(a, 'executed', msg);
+  } catch (e) { await ack(a, 'failed', `Not moved: ${errText(e)}. Check your Derive balances before asking again.`); }
+}
+
 /** Run every approved request for this wallet. Returns how many were handled. Never throws. */
 export async function runApproved(snapshot: Snapshot, opts: { onExecuted?: (c: Candidate) => void } = {}): Promise<number> {
   let approved: ActionRow[];
@@ -58,6 +81,15 @@ export async function runApproved(snapshot: Snapshot, opts: { onExecuted?: (c: C
   };
 
   for (const a of approved) {
+    const fd = (a.detail as { chatFund?: ChatFundSpec }).chatFund;
+    if (a.origin === 'chat' && fd) {
+      // Rebuilt from the approved spec against fresh balances: the exact approved amount or nothing, through the same guard and executor as every move.
+      const { c, problem } = fundCandidate(snapshot, fd, `chat-fund-${a.id}`);
+      if (!c) { await ack(a, 'failed', `Not moved: ${problem}. Nothing was moved.`); continue; }
+      await runOne(a, c); continue;
+    }
+    const mv = (a.detail as { chatMove?: ChatMoveSpec }).chatMove;
+    if (a.origin === 'chat' && mv) { await runMove(snapshot, a, mv, ack); continue; }
     // A trade the user asked for in the chat: rebuilt from its exact spec, re-quoted, then the same guard as any trade.
     const spec = (a.detail as { chatTrade?: ChatTradeSpec }).chatTrade;
     if (a.origin === 'chat' && spec) {
