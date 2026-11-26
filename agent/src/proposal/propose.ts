@@ -20,7 +20,7 @@ import { draftText, fitRule, type Fit, type FitInputs } from './compute';
 
 export const fitParams = () => { const c = config(); return { maxUtil: c.PROPOSE_MAX_UTIL, kSigma: c.PROPOSE_K_SIGMA, volStress: c.PROPOSE_VOL_STRESS, minTrigger: c.PROPOSE_MIN_TRIGGER, maxTrigger: c.PROPOSE_MAX_TRIGGER, tickSec: c.TICK_INTERVAL_SEC }; };
 
-export interface AccountView { venue: 'aster' | 'lighter' | 'derive'; accountRef: string; equityUsd: number; usedUsd: number; positions: { symbol: string; valueUsd: number }[] }
+export interface AccountView { venue: 'aster' | 'derive'; accountRef: string; equityUsd: number; usedUsd: number; positions: { symbol: string; valueUsd: number }[] }
 
 /** Fit + explain. Numbers come from code; the LLM (if on) only writes the two explanation fields. */
 export async function buildProposal(wallet: string, network: Network, acct: AccountView, inputs: FitInputs): Promise<ProposalIn> {

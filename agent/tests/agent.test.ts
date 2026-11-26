@@ -50,7 +50,7 @@ describe('graph (LLM off, dry run)', () => {
     expect(out.steps.length).toBeGreaterThan(1);
   });
   it('fails closed on bad data and runs no steps', async () => {
-    const out = await buildGraph().invoke({ snapshot: fixtureSnapshot({ dataQuality: ['lighter main account unreadable'] }) });
+    const out = await buildGraph().invoke({ snapshot: fixtureSnapshot({ dataQuality: ['perps account unreadable'] }) });
     expect(out.outcome).toBe('error');
     expect(out.steps).toHaveLength(0);
   });

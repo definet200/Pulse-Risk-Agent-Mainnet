@@ -171,6 +171,22 @@ export async function markPrice(n: Network, ticker: string): Promise<number> {
   return p;
 }
 
+export interface AsterMarketStats { markPrice: number; indexPrice: number | null; /** per funding interval, percent; positive = longs pay shorts */ fundingRatePct: number | null; nextFundingAt: number | null; change24hPct: number | null; volume24hUsd: number | null }
+
+/** Live stats for one perp: mark and index price, the current funding rate and next funding time, and the 24 h move and volume. Public, no key. */
+export async function marketStats(n: Network, ticker: string): Promise<AsterMarketStats> {
+  const symbol = asterSymbol(ticker);
+  const [pi, t24] = await Promise.all([
+    publicGet<{ markPrice?: string; indexPrice?: string; lastFundingRate?: string; nextFundingTime?: number }>(n, '/fapi/v1/premiumIndex', { symbol }),
+    publicGet<{ priceChangePercent?: string; quoteVolume?: string }>(n, '/fapi/v1/ticker/24hr', { symbol }).catch(() => null),
+  ]);
+  const mark = Number(pi.markPrice);
+  if (!(mark > 0)) throw new Error(`no mark price for ${ticker}`);
+  const f = (v: unknown) => { const x = Number(v); return v !== undefined && v !== null && v !== '' && Number.isFinite(x) ? x : null; };
+  const fr = f(pi.lastFundingRate);
+  return { markPrice: mark, indexPrice: f(pi.indexPrice), fundingRatePct: fr === null ? null : fr * 100, nextFundingAt: f(pi.nextFundingTime), change24hPct: f(t24?.priceChangePercent), volume24hUsd: f(t24?.quoteVolume) };
+}
+
 /** Hourly closes (volatility, proxies) live in ./metrics (fetchHourlyCloses), read from the public klines. */
 
 // ── writes (live only) ───────────────────────────────────────────────────────

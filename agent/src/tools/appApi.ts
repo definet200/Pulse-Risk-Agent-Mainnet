@@ -8,10 +8,9 @@ import type { Network } from '../types';
 
 export interface WalletEntry {
   wallet: string;
-  keys: { venue: 'aster' | 'lighter' | 'derive'; accountRef: string; keyRef: string; status: string; expiresAt: number | null }[];
+  keys: { venue: 'aster' | 'derive'; accountRef: string; keyRef: string; status: string; expiresAt: number | null }[];
   config: AgentConfig;
 }
-export interface LighterCreds { accountIndex: number; apiKeyIndex: number; publicKey?: string; apiPrivateKey: string }
 /** Aster agent credentials: `user` is the account owner, `agentAddress` signs (canWithdraw=false, so it can never move funds out). */
 export interface AsterCreds { venue: 'aster'; network: Network; wallet: string; user: string; agentAddress: string; agentPrivateKey: string; expiresAt: number | null }
 export interface DeriveCreds { subaccountId: number; sessionKeyAddress: string; sessionPrivateKey: string; expiresAt: number | null }
@@ -36,7 +35,6 @@ export const listWallets = (network: Network) => call<{ wallets: WalletEntry[] }
 export const getConfig = (wallet: string, network: Network) =>
   call<unknown>('GET', '/api/agent/v1/config', { wallet, network }).then((j) => AgentConfig.parse((j as { config?: unknown }).config ?? j));
 
-export const getLighterCreds = (wallet: string, network: Network) => call<LighterCreds>('GET', '/api/agent/v1/credentials', { wallet, venue: 'lighter', network });
 export const getAsterCreds = (wallet: string, network: Network) => call<AsterCreds>('GET', '/api/agent/v1/credentials', { wallet, venue: 'aster', network });
 export const getDeriveCreds = (wallet: string, network: Network) => call<DeriveCreds>('GET', '/api/agent/v1/credentials', { wallet, venue: 'derive', network });
 
@@ -45,7 +43,7 @@ export const getRuleStates = (wallet: string, network: Network) =>
 
 export interface EventIn {
   wallet: string; network: Network; kind: 'hedge' | 'rebalance' | 'bridge' | 'info' | 'error' | 'news' | 'warning';
-  venue?: 'aster' | 'lighter' | 'derive' | 'bsc' | 'relay'; status?: 'pending' | 'done' | 'failed';
+  venue?: 'aster' | 'derive' | 'bsc' | 'relay'; status?: 'pending' | 'done' | 'failed';
   message: string; payload?: Record<string, unknown>; idempotencyKey: string;
 }
 let eventSink: ((e: EventIn) => void) | null = null;
@@ -57,7 +55,7 @@ export interface RuleStatePost { wallet: string; network: Network; ruleKey: stri
 export const postRuleState = (s: RuleStatePost) => config().POST_EVENTS ? call<{ ok?: boolean }>('POST', '/api/agent/v1/rule-state', undefined, s) : Promise.resolve({ ok: true });
 
 export interface ProposalPost {
-  wallet: string; network: Network; venue: 'aster' | 'lighter' | 'derive'; accountRef: string;
+  wallet: string; network: Network; venue: 'aster' | 'derive' | 'lighter'; accountRef: string;
   structural_risk: string; reasoning: string; metrics?: Record<string, number | string | null>;
   proposed_rule: { top_up_trigger: number; restore_target: number; release_trigger: number; primary_source: 'bstocks_bnb' | 'exchange_wallet' };
   idempotencyKey: string;
@@ -77,7 +75,7 @@ export interface ActionsBackend {
   result(id: number, wallet: string, network: Network, status: 'executed' | 'failed' | 'expired', message: string): Promise<void>;
 }
 
-/** What the user reads never names a venue (Aster/Lighter = perps, Derive = options); `detail` is the agent's spec and stays as is. */
+/** What the user reads never names a venue (Aster = perps, Derive = options); `detail` is the agent's spec and stays as is. */
 const shownAction = (a: ActionPost): ActionPost => ({ ...venueWordsDeep({ ...a, detail: {} }), detail: a.detail, wallet: a.wallet, network: a.network, venue: a.venue, kind: a.kind, origin: a.origin, slot: a.slot, idempotencyKey: a.idempotencyKey });
 
 const httpActions: ActionsBackend = {

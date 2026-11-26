@@ -1,6 +1,6 @@
 # Pulse Risk Margin Agent — how it works
 
-A background service that keeps each user's Lighter and Derive margin safe using money they hold on BNB Chain, and keeps their bStocks hedged. It runs the rules the user set on the app's **Risk management** page. This document describes what is built in `agent/` today.
+A background service that keeps each user's Aster (perps) and Derive (options) margin safe using money they hold on BNB Chain, and keeps their bStocks hedged. It runs the rules the user set on the app's **Risk management** page. This document describes what is built in `agent/` today.
 
 ## 1. The idea in one paragraph
 
@@ -30,9 +30,9 @@ The LLM can only **narrow** the set of actions (pick one, veto it, or skip). It 
                          │   scheduler ─▶ collect ─▶ LangGraph ─▶ executor ─▶ report                      │
                          └───┬───────────────┬───────────────┬───────────────┬───────────────┬───────────┘
                              ▼               ▼               ▼               ▼               ▼
-                          Lighter          Derive       BNB Chain         Relay        PancakeSwap
-                       (account, orders,  (account,    (balances,      (bridge BSC→    (sell bStocks)
-                        transfer, withdraw) writes TBD)  allowance,      Lighter)
+                           Aster           Derive       BNB Chain         Relay        PancakeSwap
+                       (account, orders,  (account,    (balances,      (bridge BSC→    (sell bStocks,
+                        leverage, deposit)  transfers)   allowance,      Ethereum for    USDC to USDT)
                                                          transferFrom)
                                                   OpenRouter (LLM) ◀── graph nodes
 ```
@@ -41,13 +41,13 @@ The LLM can only **narrow** the set of actions (pick one, veto it, or skip). It 
 
 1. **Top up margin.** An account crosses its trigger (utilization too high or value too low). Pull USDC from the user's BNB wallet, bridge it, deposit it.
 2. **Release surplus.** Too much idle margin for the configured time. Withdraw the surplus.
-3. **Hedge bStocks.** Keep a short on the matching Lighter perp (NVDAB → NVDA-PERP). Re-hedge when drift passes the threshold. It only acts when bStocks are held or a stale short must be closed.
+3. **Hedge bStocks.** Keep a short on the matching Aster perp (NVDAB → NVDAUSDT). Re-hedge when drift passes the threshold. It only acts when bStocks are held or a stale short must be closed.
 
 ## 5. One tick, step by step
 
 `src/index.ts` loops every `TICK_INTERVAL_SEC` (default 30). For each wallet from the app:
 
-**Step 0 — collect (code, not an LLM).** `tools/collect.ts` builds a `Snapshot`: the user's rules, rule state, live health of every rule's account (Lighter / Derive), Lighter positions, BNB balances (USDC, USDT, bStocks with price), the on-chain allowance to the agent, and the agent's own 24 h move log. A failed read never throws; it adds a `dataQuality` flag.
+**Step 0 — collect (code, not an LLM).** `tools/collect.ts` builds a `Snapshot`: the user's rules, rule state, live health of every rule's account (Aster / Derive), Aster positions, BNB balances (USDC, USDT, bStocks with price), the on-chain allowance to the agent, and the agent's own 24 h move log. A failed read never throws; it adds a `dataQuality` flag.
 
 Then the LangGraph (`src/graph/`) runs:
 
@@ -88,7 +88,7 @@ Outcomes: `idle`, `error`, `skipped`, `vetoed`, `simulated` (dry run), `done`, `
 | Source | Data |
 |---|---|
 | App API (`AGENT_API_TOKEN`) | wallets, config (rules, hedge legs, caps), venue credentials, rule-state |
-| Lighter REST | account equity, available balance, positions, market decimals, nonce |
+| Aster REST (`/fapi/v3`, agent-signed) | account equity, available balance, positions, open orders, leverage brackets, market rules, mark price, funding |
 | Derive REST | subaccount collateral and margin (read-only today) |
 | BSC RPC | USDC/USDT/bStock balances, `uiMultiplier`, user→agent allowance |
 | PancakeSwap quoter | bStock prices (best of the four fee tiers) |
@@ -99,7 +99,7 @@ Outcomes: `idle`, `error`, `skipped`, `vetoed`, `simulated` (dry run), `done`, `
 
 | Where | What |
 |---|---|
-| On-chain / venues (live mode only) | `transferFrom` pull, Relay bridge txs, Lighter order / transfer / withdraw |
+| On-chain / venues (live mode only) | `transferFrom` pull, Relay bridge txs, Aster order / leverage / deposit, Derive transfers |
 | App `POST /events` | pending → done / failed, with direction and amount (feeds Activity and Recent moves) |
 | App `POST /rule-state` | last move time, outcome text on the rule card, run-once markers, release-dwell start |
 | Local SQLite (`data/agent.db`) | move log (24 h cap), in-flight locks, per-step idempotency keys |
@@ -111,7 +111,7 @@ There is **no per-move approval**. The user approves once, in the app, and the a
 | Approval | Where | Effect |
 |---|---|---|
 | Wallet login | app, MetaMask signature | identifies the user |
-| Agent keys | Agents page | lets the agent trade/transfer on Lighter and Derive |
+| Agent keys | Agents page | lets the agent trade on Aster (it can never withdraw) and trade/transfer on Derive |
 | Rules + Automation on | Risk management page | when and how much, with caps |
 | Allowance | on-chain `approve` to the agent's BSC address | the hard cap on BNB funds the agent can pull; revocable any time |
 
@@ -120,7 +120,7 @@ The agent's own switches: `DRY_RUN=true` by default (nothing is signed or sent).
 ## 8. Safety rules enforced in code
 
 - Amounts are integer base-unit strings; never rounded into a tx amount. BSC stables are 18 dp, USDC on venues 6 dp (`baseToBsc`).
-- Caps: on-chain allowance, `maxPerMove`, `dailyCap` (from the agent's own log), `minMove` (Lighter $6, Derive $7), cooldown (at least 5 min), BNB reserve, run-once markers.
+- Caps: on-chain allowance, `maxPerMove`, `dailyCap` (from the agent's own log), `minMove` (Aster $6, Derive $7), cooldown (at least 5 min), BNB reserve, run-once markers.
 - Money only goes to the same user's accounts, and the destination always comes from the rule, never from an LLM.
 - One move in flight per rule (lock with 30 min expiry).
 - Idempotency: every live step is stored under its own key, so a crash and retry resumes instead of repeating a transfer.
@@ -141,18 +141,18 @@ The agent's own switches: `DRY_RUN=true` by default (nothing is signed or sent).
 
 | Module | Methods | Status |
 |---|---|---|
-| `tools/appApi.ts` | `listWallets`, `getConfig`, `getLighterCreds`, `getDeriveCreds`, `getRuleStates`, `postEvent`, `postRuleState` | built, tested against types only |
+| `tools/appApi.ts` | `listWallets`, `getConfig`, `getAsterCreds`, `getDeriveCreds`, `getRuleStates`, `postEvent`, `postRuleState` | built, tested against types only |
 | `tools/collect.ts` | `collectSnapshot` | built, tested via injected deps |
-| `tools/lighter.ts` | `getAccount`, `healthOf`, `positionsOf`, `getMarket`, `getNonce`, `getTx`, `placeMarketOrder`, `transferToOwnAccount`, `withdrawToOwner` | reads built; **writes built but never run against a venue** |
-| `tools/lighterSigner.ts` | `loadSigner` (the app's Go-to-WASM signer in `../vendor/lighter`) | built |
+| `tools/aster.ts` | `getAccount`, `healthOf`, `positionsOf`, `openOrders`, `markets`, `market`, `markPrice`, `marketStats`, `maxLeverage`, `setLeverage`, `placeMarketOrder`, `cancelOrder` | reads verified live; orders verified on mainnet with small size |
+| `tools/asterDeposit.ts` | `fundAster`, `describeAsterFunding` | BNB wallet to Aster margin, all on BNB Chain (USDC to USDT swap, then deposit) |
 | `tools/derive.ts` | `authHeaders`, `getSubaccount`, `healthOf` | reads built; **writes (`depositToSubaccount`, `transferSpot`, `withdrawToOwner`) NOT wired**, they throw |
 | `tools/bsc.ts` | `getFunds`, `pullUsdc`, `baseToBsc` / `bscToBase` | reads built; `pullUsdc` never run live |
-| `tools/relay.ts` | `getQuote`, `validateQuote`, `executeSteps`, `getStatus` | built, never run live (mainnet only) |
+| `tools/relay.ts` | `validateQuote`, `executeSteps`, `getStatus`, `getStatusDetail` | built, never run live (mainnet only) |
 | `tools/pancake.ts` | `quoteSell`, `priceOf`, `sell` | built, never run live; the guard currently refuses bStock-funded top-ups |
 | `tools/planner.ts` | `buildCandidates` (wraps the app's `planRule`, `planFunding`, `planHedge`) | built, unit-tested |
 | `tools/guard.ts` | `checkCandidate`, `filterCandidates`, `lockKey` | built, unit-tested |
 | `tools/store.ts` | `logMove`, `moved24h`, `acquireLock`, `getStep`, `saveStep` | built |
-| `tools/executor.ts` | `execute`, `describeSteps` | dry run built and tested; live paths for Lighter top-up / release / hedge built, untested |
+| `tools/executor.ts` | `execute`, `describeSteps` | dry run built and tested; live paths for Aster top-up / hedge and Derive top-up / release |
 
 ## 11. Configuration (`agent/.env`, never committed)
 
@@ -163,7 +163,7 @@ The agent's own switches: `DRY_RUN=true` by default (nothing is signed or sent).
 | Safety | `DRY_RUN` (default true), `ALLOW_LIVE`, `POST_EVENTS` |
 | LLM | `LLM_MODE`, `OPENROUTER_API_KEY`, `OPENROUTER_BASE_URL`, `LLM_MODEL_*`, `LLM_FALLBACK_MODELS`, `LLM_TEMPERATURE`, `LLM_TIMEOUT_MS`, `LLM_MAX_RETRIES` |
 | Chain | `AGENT_BSC_PRIVATE_KEY`, `BSC_RPC_URL`, `ETH_RPC_URL`, `RELAY_API_KEY` |
-| Local | `AGENT_DB_PATH`, `LIGHTER_WASM_DIR`, `LOG_LEVEL` |
+| Local | `AGENT_DB_PATH`, `LOG_LEVEL` |
 
 `.env.example` documents every key. The real `.env` is git-ignored.
 
@@ -186,7 +186,7 @@ npm start           # the 30 s loop
 The fixed 70 / 45 / 25 numbers are only defaults. A separate **risk analyst** pass (every `PROPOSE_INTERVAL_SEC`, default 5 min, per wallet) fits a rule to the user's actual book and submits it as a **proposal**. Nothing is armed until the user clicks Approve in the app.
 
 ```
- Lighter account + positions ─┐
+ Aster account + positions ──┐
  realised 1h volatility ──────┤   code: fitRule()           LLM: risk_analyst           app UI
  top-up latency (measured) ───┼─▶ trigger / restore /  ───▶ writes structural_risk ───▶ Proposal card
  leverage, BNB stables, ──────┘   release / primary source   + reasoning (no numbers)    [Approve & arm] [Reject]
@@ -207,8 +207,8 @@ The fixed 70 / 45 / 25 numbers are only defaults. A separate **risk analyst** pa
 - **Derive money moves** (deposit, `transfer_spot`, withdraw): not wired. Derive top-ups and releases fail closed with a clear step message.
 - **bStock-funded top-ups** (selling on PancakeSwap): the tool exists but the guard refuses these until the bStock allowance is read; USDT sources likewise.
 - **Release returning to BNB:** a release lands on the user's Ethereum address; bridging back needs the user or an Ethereum allowance (open decision).
-- **Live paths** for Lighter top-up, release and hedge, plus `pullUsdc` and Relay execution, are written but have never run against a real venue. They need the agent BSC wallet, RPC URLs, a test user with keys, a rule and an allowance, and (for BNB → Lighter) about $10 of real USDC on mainnet, since Relay has no testnet.
-- **Venue-position hedging** (hedge a Lighter or Derive position rather than held bStocks) is not in scope; it needs exposure netting.
+- **Live paths** for Aster top-up and hedge, Derive top-up and release, plus `pullUsdc` and Relay execution, are written but have never run against a real venue. They need the agent BSC wallet, RPC URLs, a test user with keys, a rule and an allowance, and (for BNB → Aster) about $10 of real USDC on mainnet, since there is no testnet for these paths.
+- **Venue-position hedging** (hedge an Aster or Derive position rather than held bStocks) is not in scope; it needs exposure netting.
 - **Monitoring and hosting** of the service is undecided.
 - Verify the OpenRouter model slugs before the first LLM run.
 
@@ -216,7 +216,7 @@ The fixed 70 / 45 / 25 numbers are only defaults. A separate **risk analyst** pa
 
 **Graph:** `validate -> read_news -> plan -> analyst -> decider -> reviewer -> confirm -> guard -> execute -> report`. A second graph (`graph/proposal.ts`) proposes margin rules for human approval (section 13).
 
-**Hedge size is solved, not set.** `risk/model.ts` computes the 99% loss per ticker (z99 x daily volatility from Lighter hourly candles, or the event gap inside an event window), the portfolio 99% loss with an assumed correlation, and the smallest hedge that keeps it inside the user's loss tolerance (`h >= 1 - L / VaR99`). `risk/plan.ts` turns that into trades: exposure and coverage per ticker (direct perp, proxy, none), cost, perp leverage capped so a p99 gap stays under about 30% of margin, the margin move from BNB with its transfer time, and a proposal card with the 99% loss before and after, validity, assumptions, invalidation conditions and the worst case on the hedge. Trades are trimmed to the user's per-trade and per-day notional limits, and to the margin that can arrive before an event (a bridge slower than the event gives a partial hedge from the margin already on Lighter). Every number is computed by code. The LLM nodes only choose, veto and explain.
+**Hedge size is solved, not set.** `risk/model.ts` computes the 99% loss per ticker (z99 x daily volatility from Aster hourly candles, or the event gap inside an event window), the portfolio 99% loss with an assumed correlation, and the smallest hedge that keeps it inside the user's loss tolerance (`h >= 1 - L / VaR99`). `risk/plan.ts` turns that into trades: exposure and coverage per ticker (direct perp, proxy, none), cost, perp leverage capped so a p99 gap stays under about 30% of margin, the margin move from BNB with its transfer time, and a proposal card with the 99% loss before and after, validity, assumptions, invalidation conditions and the worst case on the hedge. Trades are trimmed to the user's per-trade and per-day notional limits, and to the margin that can arrive before an event (a bridge slower than the event gives a partial hedge from the margin already on Aster). Every number is computed by code. The LLM nodes only choose, veto and explain.
 
 **News is advisory only.** `read_news` fetches free RSS headlines, a model scores them, and a strong score becomes a flag in the activity feed and status. A flag is context for the LLM nodes and never a reason to size, place or veto anything. The plan is identical with and without news (tested).
 
@@ -224,7 +224,7 @@ The fixed 70 / 45 / 25 numbers are only defaults. A separate **risk analyst** pa
 
 **Modes.** `confirm` (default): the agent posts what, why, what it helps, the plan and the steps; the user approves in the app; the agent re-plans from fresh data, re-checks the guard, executes and acknowledges (`executed`, `failed`, `expired`). `autonomous`: opt-in, lapses at its expiry or at the daily loss cap, falls back to asking when a limit needs a human. The kill switch halts all new orders and transfers; existing hedges stay open.
 
-**Margin comes from USDC, then USDT, then selling bStocks** (`tools/executor.ts` `fundLighterMain`). USDT is pulled and swapped to USDC on PancakeSwap V3. For each bStock sale the agent pulls the bStock from the user (`transferFrom`, needs an allowance to the agent address), sells it for USDC on PancakeSwap V3 along bStock -> USDT -> USDC (`pancake.sellBstockForUsdc`, min-out from a fresh QuoterV2 quote, 1% slippage, actual USDC from the balance difference), then bridges everything in one Relay transfer. A sale is final, so there is no rollback: a failed step stops the move and is reported, and each step is resumable by its idempotency key. `collateral.bstockHaircut` is the haircut applied to a bStock's value when counting what a sale yields.
+**Margin comes from USDC, then USDT, then selling bStocks** (`tools/executor.ts` `fundAster`). USDT is pulled and swapped to USDC on PancakeSwap V3. For each bStock sale the agent pulls the bStock from the user (`transferFrom`, needs an allowance to the agent address), sells it for USDC on PancakeSwap V3 along bStock -> USDT -> USDC (`pancake.sellBstockForUsdc`, min-out from a fresh QuoterV2 quote, 1% slippage, actual USDC from the balance difference), then bridges everything in one Relay transfer. A sale is final, so there is no rollback: a failed step stops the move and is reported, and each step is resumable by its idempotency key. `collateral.bstockHaircut` is the haircut applied to a bStock's value when counting what a sale yields.
 
 **Status** (`status.ts`) is posted every tick, even with the kill switch on: mode, limits used today, coverage, VaR against the limit, next event, last news scan, flags, what is and is not monitored, alerts.
 
