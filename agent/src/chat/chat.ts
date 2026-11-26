@@ -77,7 +77,7 @@ export function figures(text: string): { raw: string; value: number }[] {
 const REQUEST_TOOLS = new Set(['propose_trade', 'propose_margin_move', 'propose_fund_move', 'propose_enable_subaccount']);
 /** The answer says a request or move was created / is waiting for Approve. */
 export const claimsRequest = (a: string) => /\b(request|move|transfer|trade|order)\b[^.]{0,80}\b(created|is waiting|waiting (below|for your approval)|has been (placed|submitted|queued))\b|\b(approve|approval) (button|card)\b[^.]{0,40}\bbelow\b/i.test(a);
-const madeRequest = (ctx: Ctx) => ctx.steps.some((s) => REQUEST_TOOLS.has(s.tool)) && ctx.facts.some((f) => /\b(created|already waiting)\b/.test(f.value));
+const madeRequest = (ctx: Ctx) => ctx.requestCreated || (ctx.steps.some((s) => REQUEST_TOOLS.has(s.tool)) && ctx.facts.some((f) => /\b(created|already waiting)\b/.test(f.value)));
 
 export function ungroundedFigures(answer: string, sources: string[]): string[] {
   const allowed = sources.flatMap((t) => [...t.matchAll(/(\d[\d,]*(?:\.\d+)?)\s?([kKmM](?![A-Za-z]))?/g)].map((m) => Number(m[1].replace(/,/g, '')) * (m[2] ? (/k/i.test(m[2]) ? 1e3 : 1e6) : 1))).filter((n) => !Number.isNaN(n));
@@ -117,6 +117,8 @@ export function setLiveReader(fn?: LiveReader) { readLive = fn ?? realReadLive; 
 
 class Ctx {
   snapshot: Snapshot | null = null; source: 'live' | null = null; sourceNote: string | null = null; blocked: string | null = null;
+  /** A hedging request was raised for Approve in this reply (so the answer may say so). */
+  requestCreated = false;
   facts: Fact[] = []; steps: Step[] = []; scenarios: Scenario[] = []; quotes: PutQuoteView[] = []; ui = { showPending: false, showActivity: false };
   constructor(readonly req: ChatRequest) {}
   /** Give every fact a conversation-wide id and return them for the model to read. */
@@ -220,7 +222,17 @@ function makeTools(ctx: Ctx): StructuredToolInterface[] {
         const { snapshot, applied } = applyOverrides(s, o); const inputs = [`your portfolio with ${applied.length ? applied.join('; ') : 'no changes'}`];
         const r = await withTimeout(runWhatIf(snapshot), 60_000, 'the hedging agent');
         ctx.steps.push({ tool: 'run_hedging_agent', label: applied.length ? 'Ran the hedging agent with changed values' : 'Ran the hedging agent on your current numbers' }); ctx.scenarios.push(scenarioOf('current', inputs, r, snapshot, applied.length === 0)); if (applied.length === 0) ctx.ui.showPending = true; if (applied.length === 0 && r.card?.plan) ctx.ui.showPending = true;
-        return ok(ctx, resultFacts(inputs, r), ctx.sourceNote ?? undefined);
+        // The user's own numbers, nothing changed, and the agent would ask first: raise that very request now (same slot and key the live agent uses, so it is
+        // never doubled) so Approve is there as soon as the hedge is recommended, not after the next 30 s check. Signed-in only: Approve needs a session.
+        const items = resultFacts(inputs, r);
+        if (applied.length === 0 && ctx.req.signedIn && r.request && r.outcome === 'awaiting') {
+          try {
+            const posted = await postActionToApp({ ...r.request, wallet: ctx.req.wallet, network: ctx.req.network });
+            ctx.requestCreated = true; ctx.ui.showPending = true;
+            items.push({ label: 'Hedge request', value: `${posted.duplicate ? 'already waiting' : 'created'} for Approve (status ${posted.status}): ${r.request.title}. It is NOT placed yet: it runs only when the user presses Approve below. Caps, reserve and the kill switch are re-checked then.` });
+          } catch (e) { items.push({ label: 'Hedge request', value: `could not be raised for Approve just now (${e instanceof Error ? e.message : String(e)}); the live agent will post it within about 30 seconds` }); }
+        }
+        return ok(ctx, items, ctx.sourceNote ?? undefined);
       } catch (e) {
         const msg = e instanceof z.ZodError ? `invalid arguments: ${e.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}` : e instanceof Error ? e.message : String(e);
         return JSON.stringify({ error: msg });
