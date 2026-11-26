@@ -13,7 +13,6 @@ nothing until you press Approve.
 
 | | |
 |---|---|
-| **See the idea** | [Pitch deck](pitch-deck/) |
 | **Why the prices can be trusted** | [CMC-X-Atlas](CMC-X-Atlas/) |
 | **How trading and the agent work** | [bnb-hackathon](bnb-hackathon/) |
 
@@ -74,9 +73,3 @@ npm run dev:all                     # app (3100) + chat (3200) + agent loop
 ```
 
 Open http://localhost:3100. Setup details, settings and tests are in each folder's README.
-
----
-
-## Pitch deck
-
-The deck lives in **[pitch-deck/](pitch-deck/)**.
