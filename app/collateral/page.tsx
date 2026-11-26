@@ -17,7 +17,7 @@ export default function CollateralPage() {
         <h1 className="text-2xl font-semibold">bStocks as collateral</h1>
         <p className="mt-2 max-w-3xl text-sm text-muted leading-relaxed">
           Your tokenized stocks stay in your own wallet on BNB Chain and keep their stock exposure. The agent counts them, after a haircut,
-          as reserve collateral for your perps and options. If Lighter or Derive margin runs short, it uses BNB USDC first, then sells bStocks in your
+          as reserve collateral for your perps and options. If perps or options margin runs short, it uses BNB USDC first, then sells bStocks in your
           chosen order and bridges the USDC to the venue.
         </p>
         <div className="mt-5 grid gap-4 sm:grid-cols-4">

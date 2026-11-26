@@ -17,11 +17,11 @@ import type { BridgeRoute, RelayQuote } from '@/lib/relay';
 
 type Flow = 'bsc_to_lighter' | 'bsc_to_eth' | 'eth_to_lighter' | 'eth_to_derive' | 'withdraw' | 'eth_to_bsc';
 const FLOWS: { id: Flow; title: string; sub: string; mainnetOnly?: boolean }[] = [
-  { id: 'bsc_to_lighter', title: 'BNB → Lighter', sub: 'Relay delivers straight into your Lighter account · ~1 min', mainnetOnly: true },
-  { id: 'bsc_to_eth', title: 'BNB → Ethereum', sub: 'Relay · for Derive, or your first Lighter deposit', mainnetOnly: true },
-  { id: 'eth_to_lighter', title: 'Ethereum → Lighter', sub: 'Direct deposit to ZkLighter · creates the account' },
-  { id: 'eth_to_derive', title: 'Ethereum → Derive', sub: 'Direct deposit via ActionManager · ~2 min' },
-  { id: 'withdraw', title: 'Lighter / Derive → Ethereum', sub: 'Withdraw to your own wallet · 14–26 min' },
+  { id: 'bsc_to_lighter', title: 'BNB → Perps', sub: 'Relay delivers straight into your perps account · ~1 min', mainnetOnly: true },
+  { id: 'bsc_to_eth', title: 'BNB → Ethereum', sub: 'Relay · for options, or your first perps deposit', mainnetOnly: true },
+  { id: 'eth_to_lighter', title: 'Ethereum → Perps', sub: 'Direct deposit · creates the account' },
+  { id: 'eth_to_derive', title: 'Ethereum → Options', sub: 'Direct deposit via ActionManager · ~2 min' },
+  { id: 'withdraw', title: 'Perps / Options → Ethereum', sub: 'Withdraw to your own wallet · 14–26 min' },
   { id: 'eth_to_bsc', title: 'Ethereum → BNB', sub: 'Relay · bring venue withdrawals home', mainnetOnly: true },
 ];
 
@@ -84,12 +84,12 @@ function WhereMoneyIs() {
         {arrow}
         {box(`${l1Name} wallet`, 'MetaMask · L1',
           network === 'testnet' ? `${fmtUnits(l1.bal ?? null, l1.dec, 2)} / ${fmtUnits(dl1.bal ?? null, dl1.dec, 2)}` : `${fmtUnits(l1.bal ?? null, l1.dec, 2)} USDC`,
-          network === 'testnet' ? 'Lighter test USDC / Derive mock USDC' : 'transit: Relay lands here for Derive')}
+          network === 'testnet' ? 'perps test USDC / options mock USDC' : 'transit: Relay lands here for options')}
         {arrow}
         <div className="flex flex-1 flex-col gap-2 sm:flex-row">
-          {box('Lighter account', lighter.data ? `#${lighter.data.index} · perps margin` : 'perps margin',
-            lighter.data ? `$${Number(lighter.data.collateral).toFixed(2)}` : lighter.isLoading ? '—' : 'no account', 'on Lighter (zk L2 of Ethereum)', true)}
-          {box('Derive subaccount', ds ? `#${ds.subaccount_id} · options margin` : 'options margin', deriveVal, 'on Derive (settles to Ethereum)', true)}
+          {box('Perps account', lighter.data ? `#${lighter.data.index} · perps margin` : 'perps margin',
+            lighter.data ? `$${Number(lighter.data.collateral).toFixed(2)}` : lighter.isLoading ? '—' : 'no account', 'on perps (zk L2 of Ethereum)', true)}
+          {box('Options subaccount', ds ? `#${ds.subaccount_id} · options margin` : 'options margin', deriveVal, 'on options (settles to Ethereum)', true)}
         </div>
       </div>
     </div>
@@ -136,7 +136,7 @@ function RelayFlow({ route }: { route: BridgeRoute }) {
   const inDec = fromBsc ? 18 : 6;
   const units = safeParseUnits(amount, inDec);
   const bal = fromBsc ? bsc.usdc : eth.bal ?? null;
-  const dest = route === 'bsc_to_lighter' ? `Lighter account #${lighter.data?.index ?? '—'}` : route === 'bsc_to_eth' ? 'Ethereum USDC (your wallet)' : 'BNB Chain USDC (your wallet)';
+  const dest = route === 'bsc_to_lighter' ? `Perps account #${lighter.data?.index ?? '—'}` : route === 'bsc_to_eth' ? 'Ethereum USDC (your wallet)' : 'BNB Chain USDC (your wallet)';
 
   async function getQuote() {
     setErr(null); setQuote(null);
@@ -175,7 +175,7 @@ function RelayFlow({ route }: { route: BridgeRoute }) {
           <div className="flex justify-between"><span className="text-muted">ETA</span><span>~{quote.timeEstimateSec}s</span></div>
         </div>}
       </div>
-      {route === 'bsc_to_lighter' && lighter.data === null && <p className="mt-3 text-xs text-accent">You don&apos;t have a Lighter account yet. Bridge BNB → Ethereum first, then use Ethereum → Lighter; that first deposit creates the account.</p>}
+      {route === 'bsc_to_lighter' && lighter.data === null && <p className="mt-3 text-xs text-accent">You don&apos;t have a perps account yet. Bridge BNB → Ethereum first, then use Ethereum → Perps; that first deposit creates the account.</p>}
       <div className="mt-4 flex gap-2">
         <button className="btn-ghost flex-1" disabled={!units || tx.busy} onClick={() => void getQuote()}>Get quote</button>
         <button className="btn-primary flex-1" disabled={!quote || tx.busy || (bal !== null && units !== null && units > bal)} onClick={() => void execute()}>{tx.busy ? 'Working…' : 'Bridge'}</button>
@@ -201,16 +201,16 @@ function LighterDirect() {
     if (!units || !address) return;
     await tx.run(async () => {
       await tx.call(cfg.l1ChainId, 'Approve USDC (exact amount)', cfg.usdc, erc20Abi, 'approve', [cfg.zkLighter, units]);
-      await tx.call(cfg.l1ChainId, 'Deposit to Lighter', cfg.zkLighter, LIGHTER_DEPOSIT_ABI, 'deposit', [address, LIGHTER_USDC_ASSET, 0, units]);
-      tx.log({ text: 'Lighter credits L1 deposits in a few minutes. Your balance updates on the Portfolio page.', kind: 'ok' });
+      await tx.call(cfg.l1ChainId, 'Deposit to perps', cfg.zkLighter, LIGHTER_DEPOSIT_ABI, 'deposit', [address, LIGHTER_USDC_ASSET, 0, units]);
+      tx.log({ text: 'Perps credits L1 deposits in a few minutes. Your balance updates on the Portfolio page.', kind: 'ok' });
     });
   }
   return (
     <div className="mx-auto max-w-lg">
-      <h2 className="mb-1 text-xl font-semibold">Ethereum → Lighter</h2>
-      <p className="mb-4 text-sm text-muted">{network === 'testnet' ? 'Sepolia' : 'Ethereum mainnet'} · {lighter.data ? `account #${lighter.data.index}` : 'creates your Lighter account'} · gas paid in {network === 'testnet' ? 'Sepolia ' : ''}ETH</p>
+      <h2 className="mb-1 text-xl font-semibold">Ethereum → Perps</h2>
+      <p className="mb-4 text-sm text-muted">{network === 'testnet' ? 'Sepolia' : 'Ethereum mainnet'} · {lighter.data ? `account #${lighter.data.index}` : 'creates your perps account'} · gas paid in {network === 'testnet' ? 'Sepolia ' : ''}ETH</p>
       <AmountBox label={`USDC on ${network === 'testnet' ? 'Sepolia' : 'Ethereum'}`} value={amount} onChange={setAmount} balance={fmtUnits(l1.bal ?? null, l1.dec, 2)} unit="USDC" />
-      {units !== null && units < min && <p className="mt-2 text-xs text-accent">Use at least 5 USDC (Lighter minimum).</p>}
+      {units !== null && units < min && <p className="mt-2 text-xs text-accent">Use at least 5 USDC (perps minimum).</p>}
       <button className="btn-primary mt-4 w-full" disabled={!units || units < min || tx.busy || (l1.bal !== undefined && units > l1.bal)} onClick={() => void go()}>{tx.busy ? 'Working…' : 'Approve & deposit'}</button>
       <Logs logs={tx.logs} />
     </div>
@@ -232,16 +232,16 @@ function DeriveDirect() {
     if (!units || !address) return;
     await tx.run(async () => {
       await tx.call(cfg.chainId, 'Approve USDC (exact amount)', cfg.usdc, erc20Abi, 'approve', [cfg.actionManager, units]);
-      await tx.call(cfg.chainId, 'Deposit to Derive', cfg.actionManager, DERIVE_ACTION_MANAGER_ABI, 'depositToNewSubaccount', [DERIVE_USDC_ASSET, units, DERIVE_DEFAULT_MANAGER_ID, address]);
-      tx.log({ text: 'Derive credits L1 deposits in ~1.5–2 min.', kind: 'ok' });
+      await tx.call(cfg.chainId, 'Deposit to options', cfg.actionManager, DERIVE_ACTION_MANAGER_ABI, 'depositToNewSubaccount', [DERIVE_USDC_ASSET, units, DERIVE_DEFAULT_MANAGER_ID, address]);
+      tx.log({ text: 'Options credits L1 deposits in ~1.5–2 min.', kind: 'ok' });
     });
   }
   return (
     <div className="mx-auto max-w-lg">
-      <h2 className="mb-1 text-xl font-semibold">Ethereum → Derive</h2>
-      <p className="mb-4 text-sm text-muted">{network === 'testnet' ? 'Sepolia (Derive mock USDC)' : 'Ethereum mainnet'} · Standard margin, PRIME universe (BTC/ETH options + perps)</p>
+      <h2 className="mb-1 text-xl font-semibold">Ethereum → Options</h2>
+      <p className="mb-4 text-sm text-muted">{network === 'testnet' ? 'Sepolia (options mock USDC)' : 'Ethereum mainnet'} · Standard margin, PRIME universe (BTC/ETH options + perps)</p>
       <AmountBox label="USDC" value={amount} onChange={setAmount} balance={fmtUnits(l1.bal ?? null, l1.dec, 2)} unit="USDC" />
-      {units !== null && units < min && <p className="mt-2 text-xs text-accent">Deposit at least 7 USDC. Below Derive&apos;s live minimum ($5), the deposit is lost.</p>}
+      {units !== null && units < min && <p className="mt-2 text-xs text-accent">Deposit at least 7 USDC. Below the options live minimum ($5), the deposit is lost.</p>}
       {existing && <p className="mt-2 text-xs text-muted">Each direct deposit opens a new subaccount. The agent consolidates into your trading subaccount with transfer_spot.</p>}
       <button className="btn-primary mt-4 w-full" disabled={!units || units < min || tx.busy || (l1.bal !== undefined && units > l1.bal)} onClick={() => void go()}>{tx.busy ? 'Working…' : 'Approve & deposit'}</button>
       <Logs logs={tx.logs} />
@@ -258,9 +258,9 @@ function TestnetFaucets() {
       <div className="mb-2 text-muted">Testnet faucets (need Sepolia ETH for gas)</div>
       <button className="btn-ghost mb-2 w-full py-2 text-xs" disabled={!address} onClick={async () => {
         const r: { code?: number; message?: string } = await getJson<{ code?: number; message?: string }>(`/api/lighter/faucet?network=testnet&l1_address=${address}`).catch((e: Error) => ({ message: e.message }));
-        setMsg(`Lighter faucet: ${r.message ?? r.code ?? 'requested'}`);
-      }}>Lighter testnet funds</button>
-      <button className="btn-ghost w-full py-2 text-xs" disabled={!address || tx.busy} onClick={() => void tx.run(() => tx.call(11155111, 'Mint 1,000 Derive mock USDC', DERIVE.testnet.usdc, MOCK_MINT_ABI, 'mint', [address, 1_000_000_000n]))}>Mint Derive mock USDC</button>
+        setMsg(`Perps faucet: ${r.message ?? r.code ?? 'requested'}`);
+      }}>Perps testnet funds</button>
+      <button className="btn-ghost w-full py-2 text-xs" disabled={!address || tx.busy} onClick={() => void tx.run(() => tx.call(11155111, 'Mint 1,000 options mock USDC', DERIVE.testnet.usdc, MOCK_MINT_ABI, 'mint', [address, 1_000_000_000n]))}>Mint options mock USDC</button>
       {msg && <div className="mt-2 text-muted">{msg}</div>}
       <Logs logs={tx.logs} />
     </div>

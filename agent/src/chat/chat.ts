@@ -1,8 +1,8 @@
 import type { VenueAlternative } from '../../../lib/agent-action';
 import { tickerOf } from '../risk/market';
 import { chatTradeRequest, quoteSpec, specFrom } from './trade';
-import { describeSubs, moveProblems, moveRequest, resolveSub, subLabel, usdcOf, freeOf, type ChatMoveSpec } from './move';
-import { listSubaccounts } from '../tools/derive';
+import { describeSubs, managerFor, moveProblems, moveRequest, resolveSub, subLabel, usdcOf, freeOf, type ChatMoveSpec } from './move';
+import { deriveUniverses, listSubaccounts } from '../tools/derive';
 import { fundCandidate, fundRequest, resolveRule, ruleLabel, toBase, type ChatFundSpec } from './fund';
 import { ruleKey } from '../../../lib/risk-rules';
 import { checkCandidate } from '../tools/guard';
@@ -71,6 +71,11 @@ export function figures(text: string): { raw: string; value: number }[] {
   return out;
 }
 /** Figures in the answer that appear nowhere in the facts, the user's message or the conversation. Rounding to the displayed precision is allowed. */
+const REQUEST_TOOLS = new Set(['propose_trade', 'propose_margin_move', 'propose_fund_move', 'propose_enable_subaccount']);
+/** The answer says a request or move was created / is waiting for Approve. */
+export const claimsRequest = (a: string) => /\b(request|move|transfer|trade|order)\b[^.]{0,80}\b(created|is waiting|waiting (below|for your approval)|has been (placed|submitted|queued))\b|\b(approve|approval) (button|card)\b[^.]{0,40}\bbelow\b/i.test(a);
+const madeRequest = (ctx: Ctx) => ctx.steps.some((s) => REQUEST_TOOLS.has(s.tool)) && ctx.facts.some((f) => /\b(created|already waiting)\b/.test(f.value));
+
 export function ungroundedFigures(answer: string, sources: string[]): string[] {
   const allowed = sources.flatMap((t) => [...t.matchAll(/(\d[\d,]*(?:\.\d+)?)\s?([kKmM](?![A-Za-z]))?/g)].map((m) => Number(m[1].replace(/,/g, '')) * (m[2] ? (/k/i.test(m[2]) ? 1e3 : 1e6) : 1))).filter((n) => !Number.isNaN(n));
   const near = (a: number, b: number) => Math.abs(a - b) <= Math.max(0.06, Math.abs(b) * 0.005);
@@ -160,7 +165,8 @@ function resultFacts(inputs: string[], r: WhatIfResult): { label: string; value:
 
 async function readDeriveSubs(ctx: Ctx) {
   const creds = await app.getDeriveCreds(ctx.req.wallet, ctx.req.network);
-  return listSubaccounts(ctx.req.network, ctx.req.wallet, creds);
+  const subs = await listSubaccounts(ctx.req.network, ctx.req.wallet, creds);
+  return Object.assign(subs, { mainId: creds.subaccountId });
 }
 
 function makeTools(ctx: Ctx): StructuredToolInterface[] {
@@ -296,7 +302,7 @@ function makeTools(ctx: Ctx): StructuredToolInterface[] {
       try {
         const s = await ctx.ensureSnapshot();
         const subs = await withTimeout(readDeriveSubs(ctx), 20_000, 'Derive');
-        const a = resolveSub(subs, from); const b = resolveSub(subs, to);
+        const a = resolveSub(subs, from, subs.mainId); const b = resolveSub(subs, to, subs.mainId);
         const spec: ChatMoveSpec = { venue: 'derive', fromId: a.subaccount_id, toId: b.subaccount_id, fromLabel: subLabel(a), toLabel: subLabel(b), amountUsd: (Math.floor(amountUsd * 100) / 100).toFixed(2) };
         const problems = moveProblems(subs, spec, s.config.limits);
         if (problems.length) return ok(ctx, [{ label: 'Margin move', value: `not created: ${problems.join('; ')}. Nothing was moved. Subaccounts now: ${describeSubs(subs)}` }]);
@@ -305,6 +311,25 @@ function makeTools(ctx: Ctx): StructuredToolInterface[] {
         return ok(ctx, [{ label: 'Margin move', value: `${spec.amountUsd} USDC from ${spec.fromLabel} to ${spec.toLabel}: ${r.duplicate ? 'already waiting' : 'created'} (status ${r.status}). It is NOT moved yet: it runs only when the user presses Approve below, in every mode. The agent re-checks both balances, the per-move cap and the kill switch then.` }], 'The request card with Approve and Reject is shown below the answer.');
       } catch (e) { return ok(ctx, [{ label: 'Margin move', value: `not created: ${e instanceof Error ? e.message : String(e)}` }]); }
     }, { name: 'propose_margin_move', description: "Ask to move USDC margin between the user's OWN Derive subaccounts (e.g. 'move 200 from my NVDA account to main'). from/to = a subaccount id, 'main', a universe name (RWA, PRIME, MIDCAP, ALT) or a ticker held there (NVDA). Creates a request with Approve and Reject; nothing moves until they press Approve, in every mode. Call get_derive_subaccounts first if you are unsure which account they mean. Only Derive subaccount-to-subaccount moves are supported here, not Lighter, withdrawals or other wallets.", schema: z.object({ from: z.string().min(1).max(40), to: z.string().min(1).max(40), amountUsd: z.number().min(1).max(1_000_000) }) }),
+    tool(async ({ universe, amountUsd, from }: { universe: string; amountUsd: number; from?: string }) => {
+      ctx.steps.push({ tool: 'propose_enable_subaccount', label: `Prepared enabling the ${universe.toUpperCase()} subaccount for your approval` });
+      if (!ctx.req.signedIn) return ok(ctx, [{ label: 'Enable subaccount', value: 'not created: you are not signed in. Sign in with your wallet, then ask again.' }]);
+      try {
+        const s = await ctx.ensureSnapshot();
+        const [subs, universes] = await withTimeout(Promise.all([readDeriveSubs(ctx), deriveUniverses(ctx.req.network)]), 20_000, 'Derive');
+        const m = managerFor(universes, universe);
+        const amt = (Math.floor(amountUsd * 100) / 100).toFixed(2);
+        // Source: what they named, else the subaccount with the most free USDC (the fallback counts: its money is idle there).
+        const src = from ? resolveSub(subs, from, subs.mainId) : [...subs].sort((a, b) => freeOf(b) - freeOf(a))[0];
+        if (!src) return ok(ctx, [{ label: 'Enable subaccount', value: 'not created: you have no Derive subaccount to fund it from' }]);
+        const spec: ChatMoveSpec = { venue: 'derive', fromId: src.subaccount_id, toId: 0, newManager: m.managerId, fromLabel: subLabel(src), toLabel: `new ${m.name} subaccount`, amountUsd: amt };
+        const problems = moveProblems(subs, spec, s.config.limits);
+        if (problems.length) return ok(ctx, [{ label: 'Enable subaccount', value: `not created: ${problems.join('; ')}` }]);
+        const r = await postActionToApp(moveRequest(s, spec));
+        ctx.ui.showPending = true;
+        return ok(ctx, [{ label: 'Enable subaccount', value: `${spec.toLabel}, funded with ${amt} USDC from ${spec.fromLabel}: ${r.duplicate ? 'already waiting' : 'created'} (status ${r.status}). Nothing happens until you press Approve below; Derive charges about $1 and the subaccount appears 10 to 30 seconds after it runs.` }], 'The request card with Approve and Reject is shown below the answer.');
+      } catch (e) { return ok(ctx, [{ label: 'Enable subaccount', value: `not created: ${e instanceof Error ? e.message : String(e)}` }]); }
+    }, { name: 'propose_enable_subaccount', description: "Open a new Derive subaccount for a risk universe the user has not enabled yet (e.g. RWA for NVDA/US500/gold options, PRIME for crypto), funded by moving USDC from one of their own subaccounts. Creates a request with Approve and Reject; nothing happens until they approve. `from` is optional (default: the subaccount with the most free USDC, including the fallback).", schema: z.object({ universe: z.string().min(2).max(20), amountUsd: z.number().min(1).max(1_000_000), from: z.string().max(40).optional() }) }),
 
     tool(async ({ direction, venue, account, amountUsd }: { direction: 'add' | 'withdraw'; venue: 'lighter' | 'derive'; account?: string; amountUsd: number }) => {
       ctx.steps.push({ tool: 'propose_fund_move', label: `Prepared ${direction === 'add' ? 'adding' : 'withdrawing'} $${amountUsd} for your approval` });
@@ -428,6 +453,15 @@ export async function chat(req: ChatRequest): Promise<ChatResponse> {
       const r2 = await loop.invoke({ messages: [...messages, new HumanMessage(`Your last answer used figures that are not in the tool results or my message: ${bad.join(', ')}. Rewrite the answer using only figures from the tool results already above or my message; do NOT call tools you already called (call a new one only if a figure truly needs data you have not read). Leave out a figure you cannot source. If they cannot answer it, say so and add an UNSURE line. Do not mention this correction, do not apologise, and do not refer to an earlier answer: reply as if it were your first answer.`)] });
       parsed = parseReply(text(r2.messages[r2.messages.length - 1] as AIMessage)); bad = check(parsed.answer);
     } catch { /* keep the first answer, it is flagged below */ }
+  }
+  // Never claim a request exists unless a request tool ran this turn (live 2026-11-26: "Done. The request ... is waiting below"
+  // with no tool call, so no Approve card ever appeared). Ask once more, telling the model to call the tool or say it did not.
+  if (claimsRequest(parsed.answer) && !madeRequest(ctx)) {
+    try {
+      const r3 = await loop.invoke({ messages: [...messages, new HumanMessage('You said a request was created, but no request tool ran in this turn, so nothing was created and there is no Approve button. If I asked to move funds or trade, call the right tool now (propose_margin_move, propose_fund_move or propose_trade) and report its result; otherwise say plainly that nothing was created.')] });
+      messages = r3.messages; parsed = parseReply(text(messages[messages.length - 1] as AIMessage)); bad = check(parsed.answer);
+    } catch { /* fall through to the correction below */ }
+    if (claimsRequest(parsed.answer) && !madeRequest(ctx)) parsed = { ...parsed, answer: 'I did not create that request (no request was made, so there is no Approve button). Please ask again, for example: "move $7 from fallback to PRIME".' };
   }
   const known = new Map(ctx.facts.map((f) => [f.id, f])); const cites = [...new Set(parsed.sources)].map((i) => known.get(i)).filter((x): x is Fact => !!x);
   const usedTools = ctx.steps.length > 0;

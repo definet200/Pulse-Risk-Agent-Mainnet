@@ -13,11 +13,11 @@ export type LegVenue = 'derive-option' | 'lighter' | 'bstock';
 export interface WhatIfLeg { id: string; venue: LegVenue; instrument: string; underlying: string; side: 'buy' | 'sell'; size: number; marketId?: number }
 
 const VENUES: { id: LegVenue; label: string; sub: string }[] = [
-  { id: 'derive-option', label: 'Derive', sub: 'options' },
-  { id: 'lighter', label: 'Lighter', sub: 'perps' },
+  { id: 'derive-option', label: 'Options', sub: 'Options' },
+  { id: 'lighter', label: 'Perps', sub: 'Perps' },
   { id: 'bstock', label: 'bStocks', sub: 'spot · BNB' },
 ];
-export const VENUE_NAME: Record<LegVenue, string> = { 'derive-option': 'Derive option', lighter: 'Lighter perp', bstock: 'bStock (BNB)' };
+export const VENUE_NAME: Record<LegVenue, string> = { 'derive-option': 'Option', lighter: 'Perp', bstock: 'bStock (BNB)' };
 
 interface Slim { M: string; I: string; option_pricing?: { i: string; d: string; m: string } | null }
 const day = (ms: number) => new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit', timeZone: 'UTC' });
@@ -91,7 +91,7 @@ export function LegBuilder({ legs, onChange, lighterMarkets, priceOf }: {
         {venue === 'lighter' && (
           <div className="lg:col-span-4"><Field label="Market">{lighterMarkets?.length
             ? <select className={sel} value={lmk?.market_id ?? ''} onChange={(ev) => setLm(Number(ev.target.value))}>{lighterMarkets.map((m) => <option key={m.market_id} value={m.market_id}>{m.symbol}-PERP · {fmtNum(Number(m.mark_price) || m.last_trade_price, 2)}</option>)}</select>
-            : <div className="flex h-9 items-center rounded-lg border border-line bg-panel2 px-3 text-sm text-muted">Lighter markets unavailable on this network right now</div>}</Field></div>
+            : <div className="flex h-9 items-center rounded-lg border border-line bg-panel2 px-3 text-sm text-muted">Perps markets unavailable on this network right now</div>}</Field></div>
         )}
         {venue === 'bstock' && (
           <div className="lg:col-span-4"><Field label="bStock (BNB Chain)"><select className={sel} value={stock} onChange={(ev) => setStock(ev.target.value)}>{BSTOCKS_BSC.map((b) => <option key={b.symbol} value={b.symbol}>{b.symbol} · {b.displayName} → {b.underlying}</option>)}</select></Field></div>

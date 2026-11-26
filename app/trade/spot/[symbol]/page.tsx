@@ -69,7 +69,7 @@ export default function SpotPage({ params }: { params: Promise<{ symbol: string 
               <Info k="uiMultiplier" v={holding ? (Number(holding.uiMultiplier) / 1e18).toFixed(6) + 'x' : 'connect wallet to read'} />
               <Info k="Execution venue" v="PancakeSwap V3 on BNB Chain; every fee tier is quoted and the best is used" />
               <Info k="Price & book source" v="Binance spot (deepest reference market for bStocks)" />
-              <Info k="Hedge market" v={`Lighter ${token.underlying} perp (Perps tab)`} />
+              <Info k="Hedge market" v={`${token.underlying} perp (Perps tab)`} />
             </div>
           )}
         </>

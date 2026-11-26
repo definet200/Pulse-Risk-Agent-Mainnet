@@ -51,7 +51,7 @@ async function runMove(snapshot: Snapshot, a: ActionRow, spec: ChatMoveSpec, ack
     const problems = moveProblems(subs, spec, snapshot.config.limits);
     if (problems.length) { await ack(a, 'failed', `Not moved: ${problems.join('; ')}. Nothing was moved.`); return; }
     if (!config().live) { await ack(a, 'executed', `Dry run, no money moved. It would have moved ${spec.amountUsd} USDC from ${spec.fromLabel} to ${spec.toLabel} on Derive.`); return; }
-    const { opUuid } = await transferSpot(snapshot.network, snapshot.wallet, creds, spec.fromId, spec.toId, spec.amountUsd);
+    const { opUuid } = await transferSpot(snapshot.network, snapshot.wallet, creds, spec.fromId, spec.toId, spec.amountUsd, spec.toId === 0 ? spec.newManager ?? 0 : 0);
     const msg = `Done. Moved ${spec.amountUsd} USDC from ${spec.fromLabel} to ${spec.toLabel} on Derive${opUuid ? ` (operation ${opUuid})` : ''}.`;
     moved.set(a.id, msg); await ack(a, 'executed', msg);
   } catch (e) { await ack(a, 'failed', `Not moved: ${errText(e)}. Check your Derive balances before asking again.`); }
@@ -89,7 +89,7 @@ export async function runApproved(snapshot: Snapshot, opts: { onExecuted?: (c: C
       await runOne(a, c); continue;
     }
     const mv = (a.detail as { chatMove?: ChatMoveSpec }).chatMove;
-    if (a.origin === 'chat' && mv) { await runMove(snapshot, a, mv, ack); continue; }
+    if (mv && (a.origin === 'chat' || a.origin === 'rule')) { await runMove(snapshot, a, mv, ack); continue; }
     // A trade the user asked for in the chat: rebuilt from its exact spec, re-quoted, then the same guard as any trade.
     const spec = (a.detail as { chatTrade?: ChatTradeSpec }).chatTrade;
     if (a.origin === 'chat' && spec) {

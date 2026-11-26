@@ -37,10 +37,10 @@ export function LatestRun() {
       <details className="text-sm"><summary className="cursor-pointer text-muted">Live data this run used</summary>
         <div className="mt-2 grid gap-1 sm:grid-cols-2">
           <div>BNB USDC: <span className="num">{usd(f.bnbUsdc)}</span> · USDT: <span className="num">{usd(f.bnbUsdt)}</span></div>
-          <div>Lighter equity: <span className="num">{usd(f.lighterEquityUsd)}</span> · free: <span className="num">{usd(f.lighterFreeUsd)}</span></div>
-          <div>Derive free: <span className="num">{usd(f.deriveFreeUsd)}</span></div>
+          <div>Perps equity: <span className="num">{usd(f.lighterEquityUsd)}</span> · free: <span className="num">{usd(f.lighterFreeUsd)}</span></div>
+          <div>Options free: <span className="num">{usd(f.deriveFreeUsd)}</span></div>
           <div>bStocks: {f.bstocks.length ? f.bstocks.map((b) => `${b.symbol} ${b.qty} (${usd(b.usd)})`).join(', ') : 'none'}</div>
-          <div>Lighter positions: {f.positions.length ? f.positions.map((p) => `${p.market} ${p.units > 0 ? 'long' : 'short'} ${Math.abs(p.units)}`).join(', ') : 'none'}</div>
+          <div>Perps positions: {f.positions.length ? f.positions.map((p) => `${p.market} ${p.units > 0 ? 'long' : 'short'} ${Math.abs(p.units)}`).join(', ') : 'none'}</div>
         </div></details>
     </section>
   );

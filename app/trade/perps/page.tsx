@@ -83,9 +83,9 @@ function Perps() {
   if (markets.isError && !markets.data) {
     return (
       <div className="panel mx-auto mt-10 max-w-xl p-6 text-center">
-        <div className="mb-2 text-lg font-semibold">Lighter {network} isn&apos;t responding</div>
-        <p className="text-sm text-muted">{markets.error.message}. Your account, agent key and positions are unaffected. This page reconnects by itself once Lighter is back.</p>
-        <p className="mt-3 text-xs text-muted">Check <a className="text-accent underline" href={network === 'testnet' ? 'https://testnet.app.lighter.xyz' : 'https://app.lighter.xyz'} target="_blank" rel="noreferrer">Lighter&apos;s own app</a>{network === 'testnet' ? ', or switch the sidebar to Mainnet' : ''}.</p>
+        <div className="mb-2 text-lg font-semibold">Perps {network} isn&apos;t responding</div>
+        <p className="text-sm text-muted">{markets.error.message}. Your account, agent key and positions are unaffected. This page reconnects by itself once perps is back.</p>
+        <p className="mt-3 text-xs text-muted">Check <a className="text-accent underline" href={network === 'testnet' ? 'https://testnet.app.lighter.xyz' : 'https://app.lighter.xyz'} target="_blank" rel="noreferrer">the venue&apos;s own app</a>{network === 'testnet' ? ', or switch the sidebar to Mainnet' : ''}.</p>
       </div>
     );
   }
@@ -95,7 +95,7 @@ function Perps() {
       header={
         <MarketHeader
           icon={<span className="grid h-8 w-8 place-items-center rounded-full bg-[#7b61ff]/20 text-xs font-bold text-[#a593ff]">L</span>}
-          title={m ? `${m.symbol}-PERP` : 'Loading…'} badge={maxLev ? `${maxLev}x · Lighter${network === 'testnet' ? ' testnet' : ''}` : 'Lighter'}
+          title={m ? `${m.symbol}-PERP` : 'Loading…'} badge={maxLev ? `${maxLev}x · Perps${network === 'testnet' ? ' testnet' : ''}` : 'Perps'}
           price={last} changePct={pct}
           stats={[
             { label: 'Mark', value: fmtNum(m ? +m.mark_price : null, priceDecimals(last ?? 1)) },
@@ -178,7 +178,7 @@ function PerpTicket({ m, hasAccount, available, accounts, account, onAccount }: 
         await new Promise((res) => setTimeout(res, 1_500));
         const o = await getJson<OrderOutcome>(`/api/trade/lighter?${q}`).catch(() => null);
         if (o && o.state !== 'pending') { setMsg(describeOutcome(o, m.symbol)); break; }
-        if (i === 9) setMsg({ ok: true, text: `Order sent (tx ${r.txHash.slice(0, 10)}…). Lighter hasn't confirmed it yet; check Positions and Open orders.` });
+        if (i === 9) setMsg({ ok: true, text: `Order sent (tx ${r.txHash.slice(0, 10)}…). The venue hasn't confirmed it yet; check Positions and Open orders.` });
       }
       void qc.invalidateQueries({ queryKey: ['lighter-account'] });
       void qc.invalidateQueries({ queryKey: ['lighter-orders'] });
@@ -230,7 +230,7 @@ function PerpTicket({ m, hasAccount, available, accounts, account, onAccount }: 
         ) : <div className="rounded-xl bg-bg p-3 text-xs text-muted">The agent key isn&apos;t on {account ? lighterAccountName(account) : 'this account'} yet. Enable it in the Sub-accounts tab below (one MetaMask signature).</div>}
       </AgentGate>
       {msg && <div className={clsx('rounded-xl px-3 py-2 text-xs', msg.ok ? 'bg-up/10 text-up' : 'bg-down/10 text-down')}>{msg.text}</div>}
-      <p className="text-[11px] text-muted leading-snug">Lighter orders are signed by your registered agent key on the server. Trading on Lighter costs no gas.</p>
+      <p className="text-[11px] text-muted leading-snug">Perps orders are signed by your registered agent key on the server. Trading perps costs no gas.</p>
     </div>
   );
 }
@@ -244,7 +244,7 @@ function LighterPositions({ account, loading }: { account: LighterAccountView | 
   const hasKey = !!keys.data?.some((k) => k.venue === 'lighter' && k.network === network && k.status === 'active');
   const pos = account?.positions.filter((p) => +p.position !== 0) ?? [];
   if (!address) return <Empty>Connect MetaMask</Empty>;
-  if (!account) return <Empty>{loading ? 'Loading…' : 'No Lighter account yet'}</Empty>;
+  if (!account) return <Empty>{loading ? 'Loading…' : 'No perps account yet'}</Empty>;
   if (!pos.length) return <Empty>No open positions</Empty>;
   const accountIndex = account.index;
 
@@ -284,7 +284,7 @@ function LighterOrders({ marketId, accountIndex }: { marketId?: number; accountI
     queryFn: () => getJson<{ orders: { order_index: number; market_index: number; is_ask: boolean; price: string; remaining_base_amount: string; type: string }[]; needsAgent?: boolean }>(`/api/trade/lighter-orders?network=${network}&market_id=${marketId}${accountIndex !== undefined ? `&account=${accountIndex}` : ''}`),
   });
   if (!wallet) return <Empty>Sign in to see open orders</Empty>;
-  if (orders.data?.needsAgent) return <Empty>Register a Lighter agent to see orders</Empty>;
+  if (orders.data?.needsAgent) return <Empty>Register a perps agent to see orders</Empty>;
   if (!orders.data?.orders.length) return <Empty>No open orders</Empty>;
   const cancel = async (o: { market_index: number; order_index: number }) => {
     await getJson('/api/trade/lighter', { method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': newIdem() }, body: JSON.stringify({ network, action: 'cancel', marketId: o.market_index, orderIndex: o.order_index, accountIndex }) }).catch(() => undefined);

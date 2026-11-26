@@ -20,13 +20,13 @@ function toSignable(td: TypedData) {
 
 const VENUES = {
   lighter: {
-    name: 'Lighter', kind: 'Perps', color: 'text-[#a593ff]',
-    can: ['Place, modify and cancel perp orders', 'Move USDC between your own Lighter accounts', 'Secure-withdraw to your own Ethereum address'],
+    name: 'Perps', kind: 'Perps', color: 'text-[#a593ff]',
+    can: ['Place, modify and cancel perp orders', 'Move USDC between your own perps accounts', 'Secure-withdraw to your own Ethereum address'],
     cannot: ['Send funds to anyone else (needs your MetaMask signature)', 'Register other keys'],
     sign: '1 MetaMask signature (personal_sign, no gas)',
   },
   derive: {
-    name: 'Derive', kind: 'Options', color: 'text-[#5fd0ff]',
+    name: 'Options', kind: 'Options', color: 'text-[#5fd0ff]',
     can: ['Trade options and perps (trade:all)', 'Transfer between your own subaccounts', 'Withdraw to your own wallet (whitelisted at setup)'],
     cannot: ['admin, set_session_key, transfer:all or transfers to other owners (never requested)'],
     sign: '3 MetaMask signatures on Ethereum/Sepolia (2 typed-data + 1 login), no gas',
@@ -44,7 +44,7 @@ export default function AgentsPage() {
       <div className="panel p-6">
         <h1 className="flex items-center gap-2 text-2xl font-semibold"><KeyRound className="text-accent" />Agent keys</h1>
         <p className="mt-2 max-w-3xl text-sm text-muted leading-relaxed">
-          Lighter and Derive each let your wallet approve a separate <b className="text-white">agent key</b> that signs orders for you.
+          Perps and options each let your wallet approve a separate <b className="text-white">agent key</b> that signs orders for you.
           MetaMask only signs once to approve it. The key is created and kept encrypted on the Pulse Risk backend, so the hedging and
           rebalancing agent can act while you&apos;re away. Its permissions are limited: it can never send funds to anyone but you.
         </p>
@@ -77,9 +77,9 @@ function VenueCard({ venue, row }: { venue: 'lighter' | 'derive'; row?: AgentKey
       if (venue === 'lighter') {
         setStep('Generating key and signing ChangePubKey…');
         const prep = await getJson<{ messageToSign: string; accountIndex: number }>('/api/agent/register/lighter', { method: 'POST', body: JSON.stringify({ network, step: 'prepare' }) });
-        setStep(`Approve in MetaMask (Lighter account #${prep.accountIndex})…`);
+        setStep(`Approve in MetaMask (perps account #${prep.accountIndex})…`);
         const signature = await signMessageAsync({ message: prep.messageToSign });
-        setStep('Submitting to Lighter and waiting for the key to go live…');
+        setStep('Submitting to perps and waiting for the key to go live…');
         await getJson('/api/agent/register/lighter', { method: 'POST', body: JSON.stringify({ network, step: 'finalize', signature }) });
       } else {
         setStep('Preparing session key…');
@@ -92,7 +92,7 @@ function VenueCard({ venue, row }: { venue: 'lighter' | 'derive'; row?: AgentKey
         const whitelist = await signTypedDataAsync(toSignable(prep.whitelistTypedData));
         setStep('3/3 Sign the login timestamp…');
         const login = await signMessageAsync({ message: prep.loginMessage });
-        setStep('Registering with Derive…');
+        setStep('Registering with options…');
         await getJson('/api/agent/register/derive', { method: 'POST', body: JSON.stringify({ network, step: 'finalize', setKey, whitelist, login }) });
         if (original === bsc.id) await switchChainAsync({ chainId: bsc.id }).catch(() => undefined);
       }

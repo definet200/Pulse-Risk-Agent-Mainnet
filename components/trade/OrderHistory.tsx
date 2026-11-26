@@ -6,7 +6,7 @@ import { useSession } from '@/lib/session';
 import { getJson } from '@/lib/hooks/useVenues';
 import { shortHash, statusLabel, txUrl, type HistoryRow, type HistoryVenue } from '@/lib/order-history';
 
-const VENUE_LABEL: Record<HistoryVenue, string> = { lighter: 'Lighter', derive: 'Derive', bstocks: 'bStocks' };
+const VENUE_LABEL: Record<HistoryVenue, string> = { lighter: 'Perps', derive: 'Options', bstocks: 'bStocks' };
 const num = (s: string | null, max = 6) => (s === null || s === '' ? '—' : Number(s).toLocaleString('en-US', { maximumFractionDigits: max }));
 const when = (t: number) => new Date(t).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 

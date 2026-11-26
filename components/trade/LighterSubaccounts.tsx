@@ -33,7 +33,7 @@ export function LighterSubaccounts({ accounts, onTradeFrom }: { accounts: Lighte
   };
   const post = <T,>(body: object, idem = false) => getJson<T>('/api/trade/lighter-accounts', { method: 'POST', headers: { 'content-type': 'application/json', ...(idem ? { 'idempotency-key': newIdem() } : {}) }, body: JSON.stringify({ network, ...body }) });
 
-  if (!accounts.length) return <p className="py-6 text-center text-sm text-muted">No Lighter account yet. Deposit first.</p>;
+  if (!accounts.length) return <p className="py-6 text-center text-sm text-muted">No perps account yet. Deposit first.</p>;
   const f = from ?? accounts[0].index;
   const t = to ?? accounts.find((a) => a.index !== f)?.index ?? null;
 
@@ -65,7 +65,7 @@ export function LighterSubaccounts({ accounts, onTradeFrom }: { accounts: Lighte
 
       <div className="flex flex-wrap items-start gap-3">
         <button disabled={!!busy || !masterActive} className="btn-ghost inline-flex items-center gap-1.5 px-3 py-2 text-sm"
-          title={masterActive ? 'Signed by the agent key on your main account — no MetaMask popup' : 'Register the Lighter agent first'}
+          title={masterActive ? 'Signed by the agent key on your main account — no MetaMask popup' : 'Register the perps agent first'}
           onClick={() => void run('create', async () => {
             const r = await post<{ index: number | null; txHash: string }>({ action: 'create' }, true);
             return r.index ? `Created Sub #${r.index}. Enable the agent on it, then move USDC in.` : 'Sub-account submitted; it appears in a few seconds.';
@@ -87,7 +87,7 @@ export function LighterSubaccounts({ accounts, onTradeFrom }: { accounts: Lighte
         )}
       </div>
       {msg && <div className={clsx('rounded-xl px-3 py-2 text-xs', msg.ok ? 'bg-up/10 text-up' : 'bg-down/10 text-down')}>{msg.text}</div>}
-      <p className="text-[11px] text-muted">Transfers between your own Lighter accounts are instant and free. Moving out of a sub-account needs the agent enabled on that sub.</p>
+      <p className="text-[11px] text-muted">Transfers between your own perps accounts are instant and free. Moving out of a sub-account needs the agent enabled on that sub.</p>
     </div>
   );
 }

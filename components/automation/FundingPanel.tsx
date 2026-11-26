@@ -102,7 +102,7 @@ export function FundingPanel({ value, prices, onSave }: { value: Funding; prices
   return (
     <section className="panel p-5">
       <div className="flex items-center gap-2 font-semibold"><Wallet size={17} className="text-accent" />Agent budget for top-ups</div>
-      <p className="mt-0.5 text-[12px] text-muted">When a Lighter or Derive account needs margin, the agent sends it from your BNB wallet, only to <b>your own</b> accounts.</p>
+      <p className="mt-0.5 text-[12px] text-muted">When a perps or options account needs margin, the agent sends it from your BNB wallet, only to <b>your own</b> accounts.</p>
 
       <div className={clsx('mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl px-4 py-3 text-sm', total >= MIN_TOPUP ? 'bg-up/10 text-up' : 'bg-accent/10 text-accent')}>
         <span className="flex items-center gap-2">

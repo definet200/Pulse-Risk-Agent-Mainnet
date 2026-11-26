@@ -5,7 +5,7 @@ import { Shell } from '@/components/Shell';
 
 export const metadata: Metadata = {
   title: 'Pulse Risk · BNB',
-  description: 'bStocks collateral on BNB Chain, Lighter perps and Derive options, with an agent that hedges and rebalances margin.',
+  description: 'bStocks collateral on BNB Chain, perps and options, with an agent that hedges and rebalances margin.',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

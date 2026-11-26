@@ -55,7 +55,7 @@ function MarketSearch() {
             </button>
           ))}
           <button className="w-full rounded-lg px-4 py-2 text-left text-sm text-muted hover:bg-panel2"
-            onClick={() => { router.push(`/trade/perps?q=${encodeURIComponent(q)}`); setQ(''); }}>Search “{q}” in Lighter perps →</button>
+            onClick={() => { router.push(`/trade/perps?q=${encodeURIComponent(q)}`); setQ(''); }}>Search “{q}” in perps →</button>
         </div>
       )}
     </div>

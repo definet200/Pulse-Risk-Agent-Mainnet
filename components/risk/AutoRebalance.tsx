@@ -138,7 +138,7 @@ export function AutoRebalance({ accounts, rules, states, live, onLive, units, on
       {explain && (
         <div className="mx-5 mb-4 space-y-1.5 rounded-lg bg-bg/60 p-4 text-xs leading-relaxed text-[#c9ccd6] ring-1 ring-inset ring-line">
           <p><b className="text-white">Top-up.</b> When an account crosses its trigger (utilization too high, or account value too low), the agent sizes a move that brings it back to the target: <span className="num">x = used ÷ target − equity</span>. It is rounded up to the minimum move and capped by the per-move and 24h limits.</p>
-          <p><b className="text-white">Where the money comes from.</b> Your BNB wallet, in the order set under Funding: USDC, USDT, then bStocks you allowed it to sell. It only pulls within the allowance you granted, then Relay bridges it to the venue (Lighter directly; Derive via Ethereum).</p>
+          <p><b className="text-white">Where the money comes from.</b> Your BNB wallet, in the order set under Funding: USDC, USDT, then bStocks you allowed it to sell. It only pulls within the allowance you granted, then Relay bridges it to the venue (perps directly; options via Ethereum).</p>
           <p><b className="text-white">Release surplus.</b> Optional. When the account sits on the other side of the release level for the whole dwell time, the surplus goes back down to the release target, home to your BNB wallet.</p>
           <p><b className="text-white">Every time / Once.</b> Once = one move, then that direction pauses until you press Re-arm. Cooldown stops a second top-up before the first one lands.</p>
           <p className="text-muted">Rules are executed by the Pulse Risk agent service. This page shows what it would do right now from live balances.</p>
@@ -156,7 +156,7 @@ export function AutoRebalance({ accounts, rules, states, live, onLive, units, on
       {loading && !accounts.length ? (
         <div className="grid grid-cols-1 gap-3 px-5 pb-5 md:grid-cols-2 xl:grid-cols-3">{[0, 1, 2].map((i) => <div key={i} className="h-44 animate-pulse rounded-xl bg-panel2/60" />)}</div>
       ) : !accounts.length ? (
-        <p className="px-5 pb-5 text-sm text-muted">No venue accounts yet. Deposit to Lighter or Derive, then add a rule here.</p>
+        <p className="px-5 pb-5 text-sm text-muted">No venue accounts yet. Deposit to perps or options, then add a rule here.</p>
       ) : (
         <div className="grid grid-cols-1 gap-3 px-5 md:grid-cols-2 xl:grid-cols-3">
           {accounts.map((a) => {

@@ -1,3 +1,4 @@
+import { venueWords, venueWordsDeep } from '../../../lib/venue-words';
 import { AgentConfig } from '../../../lib/agent-config';
 import type { RuleState } from '../../../lib/risk-rules';
 import { config } from '../config';
@@ -47,7 +48,7 @@ export interface EventIn {
 let eventSink: ((e: EventIn) => void) | null = null;
 /** Tests and the scenario harness collect posted events here instead of calling the app. */
 export const setEventSink = (f: ((e: EventIn) => void) | null) => { eventSink = f; };
-export const postEvent = (e: EventIn) => eventSink ? (eventSink(e), Promise.resolve({ ok: true })) : config().POST_EVENTS ? call<{ ok?: boolean }>('POST', '/api/agent/v1/events', undefined, e) : Promise.resolve({ ok: true });
+export const postEvent = (e: EventIn) => eventSink ? (eventSink(e), Promise.resolve({ ok: true })) : config().POST_EVENTS ? call<{ ok?: boolean }>('POST', '/api/agent/v1/events', undefined, { ...e, message: venueWords(e.message) }) : Promise.resolve({ ok: true });
 
 export interface RuleStatePost { wallet: string; network: Network; ruleKey: string; topUpDoneAt?: string | null; releaseDoneAt?: string | null; releaseBelowSince?: string | null; lastMoveAt?: string | null; lastOutcome?: string | null; lastOutcomeMsg?: string | null }
 export const postRuleState = (s: RuleStatePost) => config().POST_EVENTS ? call<{ ok?: boolean }>('POST', '/api/agent/v1/rule-state', undefined, s) : Promise.resolve({ ok: true });
@@ -73,10 +74,13 @@ export interface ActionsBackend {
   result(id: number, wallet: string, network: Network, status: 'executed' | 'failed' | 'expired', message: string): Promise<void>;
 }
 
+/** What the user reads never names a venue (Lighter = perps, Derive = options); `detail` is the agent's spec and stays as is. */
+const shownAction = (a: ActionPost): ActionPost => ({ ...venueWordsDeep({ ...a, detail: {} }), detail: a.detail, wallet: a.wallet, network: a.network, venue: a.venue, kind: a.kind, origin: a.origin, slot: a.slot, idempotencyKey: a.idempotencyKey });
+
 const httpActions: ActionsBackend = {
-  create: (a) => call<{ id: number | null; duplicate: boolean; status: ActionStatus }>('POST', '/api/agent/v1/actions', undefined, a),
+  create: (a) => call<{ id: number | null; duplicate: boolean; status: ActionStatus }>('POST', '/api/agent/v1/actions', undefined, shownAction(a)),
   list: (wallet, network, status) => call<{ actions: ActionRow[] }>('GET', '/api/agent/v1/actions', { wallet, network, status }).then((r) => r.actions),
-  result: (id, wallet, network, status, message) => call<unknown>('POST', `/api/agent/v1/actions/${id}/result`, { network }, { wallet, status, message }).then(() => undefined),
+  result: (id, wallet, network, status, message) => call<unknown>('POST', `/api/agent/v1/actions/${id}/result`, { network }, { wallet, status, message: venueWords(message) }).then(() => undefined),
 };
 
 /** In-memory stand-in for the app's approval inbox. `approve(id)` plays the user clicking Approve. */
@@ -107,4 +111,4 @@ export const postActionResult = (id: number, wallet: string, network: Network, s
 
 // ── Status the app shows at the top of the page ────────────────────────────────
 import type { StatusIn } from '../../../lib/agent-status';
-export const postStatus = (st: StatusIn) => config().POST_EVENTS ? call<{ ok?: boolean }>('POST', '/api/agent/v1/status', undefined, st) : Promise.resolve({ ok: true });
+export const postStatus = (st: StatusIn) => config().POST_EVENTS ? call<{ ok?: boolean }>('POST', '/api/agent/v1/status', undefined, venueWordsDeep(st)) : Promise.resolve({ ok: true });

@@ -53,8 +53,8 @@ export default function PortfolioPage() {
   if (!p.address) return <AsciiLanding tickers={tickers.data ?? []} />;
 
   const allPositions = [
-    ...p.lighter.positions.map((x) => ({ venue: 'Lighter', name: `${x.symbol}-PERP`, side: x.sign > 0 ? 'Long' : 'Short', size: x.position, value: +x.position_value, pnl: +x.unrealized_pnl })),
-    ...p.derive.positions.map((x) => ({ venue: 'Derive', name: x.instrument_name, side: +x.amount >= 0 ? 'Long' : 'Short', size: x.amount, value: +x.mark_value, pnl: +x.unrealized_pnl })),
+    ...p.lighter.positions.map((x) => ({ venue: 'Perps', name: `${x.symbol}-PERP`, side: x.sign > 0 ? 'Long' : 'Short', size: x.position, value: +x.position_value, pnl: +x.unrealized_pnl })),
+    ...p.derive.positions.map((x) => ({ venue: 'Options', name: x.instrument_name, side: +x.amount >= 0 ? 'Long' : 'Short', size: x.amount, value: +x.mark_value, pnl: +x.unrealized_pnl })),
   ];
 
   return (
@@ -68,8 +68,8 @@ export default function PortfolioPage() {
         <div className="flex flex-wrap gap-8 text-sm">
           <div><div className="label">BNB wallet (stables)</div><div className="num text-lg">{fmtUsd((p.bsc.usdc ?? 0) + (p.bsc.usdt ?? 0))}</div></div>
           <div><div className="label">bStocks</div><div className="num text-lg">{fmtUsd(p.stocksValue)}</div></div>
-          <div><div className="label">Lighter</div><div className="num text-lg">{fmtUsd(p.lighter.equity ?? 0)}</div></div>
-          <div><div className="label">Derive</div><div className="num text-lg">{fmtUsd(p.derive.equity ?? 0)}</div></div>
+          <div><div className="label">Perps</div><div className="num text-lg">{fmtUsd(p.lighter.equity ?? 0)}</div></div>
+          <div><div className="label">Options</div><div className="num text-lg">{fmtUsd(p.derive.equity ?? 0)}</div></div>
         </div>
       </div>
 
@@ -84,10 +84,10 @@ export default function PortfolioPage() {
           <Row k="Collateral value" v={fmtUsd(p.stocksCollateral)} cls="text-accent" />
           <p className="mt-2 text-xs text-muted">Reserve the agent can sell to top up perp margin.</p>
         </Card>
-        <Card title="Lighter · Perps" sub={network === 'testnet' ? 'testnet' : 'mainnet'} href="/trade/perps">
+        <Card title="Perps" sub={network === 'testnet' ? 'testnet' : 'mainnet'} href="/trade/perps">
           {p.lighter.state === 'unavailable' ? (
             <div className="rounded-lg bg-accent/10 px-3 py-2 text-xs text-accent">
-              Lighter {network} is not responding right now, so balances can&apos;t be read. Your funds are unaffected; they reappear here when Lighter is back.
+              Perps {network} is not responding right now, so balances can&apos;t be read. Your funds are unaffected; they reappear here when perps is back.
             </div>
           ) : p.lighter.state === 'no_account' ? <p className="text-sm text-muted">No account yet. <Link href="/funding" className="text-accent">Deposit →</Link></p> : <>
             <Row k="Equity" v={fmtUsd(p.lighter.equity)} cls="text-lg" />
@@ -96,9 +96,9 @@ export default function PortfolioPage() {
           </>}
           <AgentBadge ok={!!keyFor('lighter')} />
         </Card>
-        <Card title="Derive · Options" sub={network === 'testnet' ? 'testnet' : 'mainnet'} href="/trade/options">
+        <Card title="Options" sub={network === 'testnet' ? 'testnet' : 'mainnet'} href="/trade/options">
           {p.derive.state === 'no_account' ? <p className="text-sm text-muted">No account yet. <Link href="/funding" className="text-accent">Deposit →</Link></p>
-            : p.derive.state === 'needs_agent' || p.derive.state === 'signed_out' ? <p className="text-sm text-muted">Register the Derive agent to read balances.</p> : <>
+            : p.derive.state === 'needs_agent' || p.derive.state === 'signed_out' ? <p className="text-sm text-muted">Register the options agent to read balances.</p> : <>
               <Row k="Equity" v={fmtUsd(p.derive.equity)} cls="text-lg" />
               <Usage pct={p.derive.usage} />
             </>}
@@ -126,7 +126,7 @@ export default function PortfolioPage() {
       </div>
 
       <div className="panel p-4">
-        <div className="mb-2 flex items-center justify-between"><span className="font-medium">Activity</span><span className="text-xs text-muted">Past orders on Lighter, Derive and bStocks, newest first</span></div>
+        <div className="mb-2 flex items-center justify-between"><span className="font-medium">Activity</span><span className="text-xs text-muted">Past orders on perps, options and bStocks, newest first</span></div>
         <OrderHistory venues={['lighter', 'derive', 'bstocks']} limit={25} showVenue />
       </div>
     </div>

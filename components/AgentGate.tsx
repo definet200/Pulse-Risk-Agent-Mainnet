@@ -13,7 +13,7 @@ export function AgentGate({ venue, hasAccount, children }: { venue: 'lighter' | 
   const { network } = useVenueNetwork();
   const keys = useAgentKeys();
   const key = keys.data?.find((k) => k.venue === venue && k.network === network);
-  const name = venue === 'lighter' ? 'Lighter' : 'Derive';
+  const name = venue === 'lighter' ? 'Perps' : 'Options';
   const box = (title: string, body: ReactNode) => (
     <div className="rounded-xl bg-bg p-4 text-sm"><div className="mb-1 font-medium">{title}</div><div className="text-muted leading-relaxed">{body}</div></div>
   );
