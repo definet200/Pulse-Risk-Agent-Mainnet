@@ -185,10 +185,4 @@ cd agent && npm test        # agent
 
 ---
 
-## Known limits
-
-- Aster's `depositFor` crediting one account from another, the spot-to-futures fallback and Aster withdrawal signing are not yet verified with real funds.
-- A perps key registered by an older build under the shared name must be rotated once (Agent keys, Perps, Rotate key).
-- Atlas feeds are confirmed for five tokens; others are checked on the remaining sources.
-
 Guides: [Agent integration](docs/AGENT.md) · [Agent build](docs/AGENT_BUILD.md) · [Aster notes](docs/endpoints/aster.md) · [Derive notes](docs/endpoints/derive.md) · [Bridge notes](docs/endpoints/relay.md)
