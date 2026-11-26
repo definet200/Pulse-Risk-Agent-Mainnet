@@ -5,6 +5,7 @@ import { planRatioHedges } from '../risk/ratio';
 import { planRule, ruleKey, type RiskRule, type RuleState } from '../../../lib/risk-rules';
 import { ACTIVE_RULE_VENUES, minDepositBase } from './venueRules';
 import type { Candidate, RejectedCandidate, Snapshot } from '../types';
+import { haircutArg } from './integrity';
 
 // Deterministic planning. Wraps the app's own pure functions (planRule / planFunding / planHedge) so the
 // agent and the UI preview always agree. No I/O, no randomness: same snapshot in, same candidates out.
@@ -56,7 +57,7 @@ export function buildCandidates(s: Snapshot, now = new Date()): PlanResult {
         const fp = planFunding(act.amountBaseUnit, {
           bscUsdc: Math.min(s.bsc.usdcUsd, allowUsd + reserveUsd), bscUsdt: Math.min(s.bsc.usdtUsd, allowUsdtUsd + Math.max(0, reserveUsd - s.bsc.usdcUsd)),
           bstocks: s.bsc.bstocks.map((b) => ({ symbol: b.symbol, value: b.qty > 0 ? b.value * Math.min(1, (b.allowanceQty ?? 0) / b.qty) : 0 })),
-        }, cfg.rebalance, cfg.collateral.bstockHaircut);
+        }, cfg.rebalance, haircutArg(s));
         let amountBase = act.amountBaseUnit; let funding = fp;
         if (fp.shortfallUsd > 0) {
           const capped = s.bsc.usdcUsd - reserveUsd > allowUsd;
@@ -65,7 +66,7 @@ export function buildCandidates(s: Snapshot, now = new Date()): PlanResult {
           const funded = BigInt(act.amountBaseUnit) - BigInt(Math.round(fp.shortfallUsd * 1e6));
           if (funded < BigInt(rule.minMoveBaseUnit) || funded < minDepositBase(rule.venue)) { rejected.push({ kind: 'top_up', ruleKey: rk, reason: why, severity: 'error' }); continue; }
           amountBase = funded.toString();
-          funding = planFunding(amountBase, { bscUsdc: Math.min(s.bsc.usdcUsd, allowUsd + reserveUsd), bscUsdt: Math.min(s.bsc.usdtUsd, allowUsdtUsd + Math.max(0, reserveUsd - s.bsc.usdcUsd)), bstocks: s.bsc.bstocks.map((b) => ({ symbol: b.symbol, value: b.qty > 0 ? b.value * Math.min(1, (b.allowanceQty ?? 0) / b.qty) : 0 })) }, cfg.rebalance, cfg.collateral.bstockHaircut);
+          funding = planFunding(amountBase, { bscUsdc: Math.min(s.bsc.usdcUsd, allowUsd + reserveUsd), bscUsdt: Math.min(s.bsc.usdtUsd, allowUsdtUsd + Math.max(0, reserveUsd - s.bsc.usdcUsd)), bstocks: s.bsc.bstocks.map((b) => ({ symbol: b.symbol, value: b.qty > 0 ? b.value * Math.min(1, (b.allowanceQty ?? 0) / b.qty) : 0 })) }, cfg.rebalance, haircutArg(s));
           rejected.push({ kind: 'top_up', ruleKey: rk, reason: `${why}; topping up the ${usd0(amountBase)} the funds do cover`, severity: 'error' });
         }
         out.push({ id: `top_up:${rk}:${amountBase}`, kind: 'top_up', ruleKey: rk, venue, amountBaseUnit: amountBase, reason: act.reason,

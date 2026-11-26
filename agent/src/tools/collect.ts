@@ -15,6 +15,8 @@ import { config } from '../config';
 import { collectMarket, realSigma, tickerOf, type SigmaFn } from '../risk/market';
 import { getChain, type OptionChain, type OptionsProvider } from '../risk/options';
 import { pickProxy, type ProxyPick } from '../risk/proxy';
+import { refreshIntegrity } from './integrity';
+import type { IntegritySnapshot } from '../../../lib/integrity-sources';
 
 // Builds the Snapshot: every live reading the graph needs for one wallet. A failed read never throws; it adds a
 // dataQuality flag, which makes the graph fail closed (report an error, move nothing).
@@ -42,6 +44,8 @@ export interface CollectDeps {
   allDeriveSubaccounts?: (n: Network, wallet: string, c: app.DeriveCreds, mainId: number) => Promise<VenueAccount[]>;
   /** Best measured proxy market for a holding (correlation of hourly returns), or null. Omitted = no proxies. */
   proxy?: (n: Network, ticker: string, listed: string[]) => Promise<ProxyPick | null>;
+  /** Price integrity of the held bStocks (Atlas + CoinMarketCap + perp). Never throws; null = unavailable. Omitted = not read. Only called when config.integrity.enabled. */
+  integrity?: (funds: BscFunds, cfg: AgentConfig) => Promise<IntegritySnapshot | null>;
 }
 
 /** The perps venue's listed tickers (Aster exchangeInfo, cached 10 minutes inside the client). */
@@ -74,6 +78,7 @@ export const realDeps: CollectDeps = {
   proxy: (n, t, listed) => pickProxy(n, t, listed),
   options: (n, t) => getChain(n, t),
   hedge: realHedgeDeps,
+  integrity: (funds, cfg) => refreshIntegrity({ funds, cfg }),
   perpMarkets: realPerpMarkets,
   perpMins: async (n, t) => { const m = await aster.market(n, t); return { minBase: m.minQty, step: m.stepSize, minNotionalUsd: m.minNotionalUsd }; },
   allDeriveSubaccounts: async (n, wallet, c, mainId) => (await derive.listSubaccounts(n, wallet, c)).map((x) => {
@@ -212,6 +217,13 @@ export async function collectSnapshot(wallet: string, network: Network, userCfg:
     }
   }
 
+  // Price integrity of the bStocks (only when the layer is on: off = nothing is fetched and the field stays absent).
+  const integrityEnabled = cfg.integrity?.enabled === true;
+  let integrity: Snapshot['integrity'];
+  if (integrityEnabled && deps.integrity) {
+    try { const r = await deps.integrity(funds, cfg); if (r) integrity = { at: r.at, items: r.items }; } catch { /* unavailable: behave as before */ }
+  }
+
   // Running totals the policy engine checks. The store may be closed in tests; then everything reads as zero.
   let today: Snapshot['today'];
   try {
@@ -223,7 +235,7 @@ export async function collectSnapshot(wallet: string, network: Network, userCfg:
   return { wallet, network, takenAt: new Date().toISOString(), config: cfg, ruleState, health, perpPositions, bsc: funds, dataQuality: dq, moved24hBase: moved, market, hedgeProblems, unassessed: unassessed && Object.keys(unassessed).length ? unassessed : undefined, perpMain, today, perpEtaSec: metrics.topUpLatencySec('aster').sec, venueProblems: Object.keys(venueProblems).length ? venueProblems : undefined, marketMins: Object.keys(marketMins).length ? marketMins : undefined,
     hedgePrices: hedgeData?.prices, hedgePositions: hedgeData?.positions, hedgeMins: hedgeData?.mins, putPositions: hedgeData?.putPositions, putPicks: hedgeData?.putPicks,
     options: Object.keys(options).length ? options : undefined, proxyPrices, heldPuts: safe(() => store.openPuts(wallet, network)), deriveEtaSec: config().DERIVE_ETA_SEC,
-    venueAccounts: venueAccounts.length ? venueAccounts : undefined,
+    venueAccounts: venueAccounts.length ? venueAccounts : undefined, integrityEnabled, ...(integrity ? { integrity } : {}),
     // Derive: the subaccount with the most free funds across ALL of them (falls back to a rule's account).
     deriveFree: (() => {
       const best = venueAccounts.filter((a) => a.venue === 'derive').sort((a, b) => b.freeUsd - a.freeUsd)[0];

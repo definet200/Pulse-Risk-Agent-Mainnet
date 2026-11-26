@@ -41,6 +41,8 @@ const Env = z.object({
   BSC_RPC_URL: z.string().url().default('https://bsc-dataseed.bnbchain.org'),
   ETH_RPC_URL: z.string().default(''),
   RELAY_API_KEY: z.string().default(''),
+  /** Atlas oracle key for the price-integrity layer. Optional: without it Atlas is simply not read. */
+  ATLAS_API_KEY: z.string().default(''),
 
   // News-driven hedging (free RSS sources, no API key). Headlines are cached so the 30 s loop does not refetch.
   NEWS_TTL_SEC: z.coerce.number().int().min(30).default(600),

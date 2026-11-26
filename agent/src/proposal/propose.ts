@@ -12,7 +12,10 @@ import { tickerOfAster } from '../../../lib/aster';
 import * as aster from '../tools/aster';
 import * as metrics from '../tools/metrics';
 import * as pancake from '../tools/pancake';
-import type { Network } from '../types';
+import type { BscFunds, Network } from '../types';
+import { refreshIntegrity } from '../tools/integrity';
+import { effectiveHaircut } from '../../../lib/integrity';
+import type { IntegritySnapshot } from '../../../lib/integrity-sources';
 import { draftText, fitRule, type Fit, type FitInputs } from './compute';
 
 // The risk analyst: once in a while, fit a rule to the user's book (volatility, latency, leverage, funding)
@@ -49,10 +52,13 @@ export interface ProposeDeps {
   latency: typeof metrics.topUpLatencySec;
   funds: (wallet: string, symbols: string[]) => ReturnType<typeof bsc.getFunds>;
   post: typeof app.postProposal;
+  /** Price integrity of the bStocks; only called when config.integrity.enabled. Omitted = flat haircut. */
+  integrity?: (funds: BscFunds, cfg: AgentConfig) => Promise<IntegritySnapshot | null>;
 }
 export const realProposeDeps: ProposeDeps = {
   getAsterCreds: app.getAsterCreds, asterAccount: aster.getAccount, vol1h: metrics.vol1h, latency: metrics.topUpLatencySec,
   funds: (w, s) => bsc.getFunds(w, bsc.agentAddress(), s, pancake.priceOf), post: app.postProposal,
+  integrity: (funds, cfg) => refreshIntegrity({ funds, cfg }),
 };
 
 /** One analysis pass for a wallet's perps (Aster) account. Returns what happened; never throws. */
@@ -71,9 +77,14 @@ export async function proposeForWallet(wallet: string, network: Network, cfg: Ag
     const { funds, problems } = await deps.funds(wallet, symbols);
     if (problems.length) return `funds unreadable: ${problems.join('; ')}`;
     const hair = cfg.collateral.bstockHaircut;
+    let afterHaircutUsd = funds.bstocks.reduce((s, b) => s + b.value, 0) * (1 - hair);
+    if (cfg.integrity?.enabled && deps.integrity) {
+      // Each bStock counts at its own (never lower) haircut; unassessed or unavailable tokens keep the flat one.
+      try { const r = await deps.integrity(funds, cfg); if (r) afterHaircutUsd = funds.bstocks.reduce((s, b) => s + b.value * (1 - effectiveHaircut(r.items.find((a) => a.symbol === b.symbol), hair, true)), 0); } catch { /* flat haircut */ }
+    }
     const inputs: FitInputs = {
       vol1h: vol, latencySec: deps.latency('aster').sec, leverage: positions.reduce((s, p) => s + p.valueUsd, 0) / used, utilNow: used / equity, equityUsd: equity, usedUsd: used,
-      bnbStablesUsd: funds.usdcUsd + funds.usdtUsd, bstocksAfterHaircutUsd: funds.bstocks.reduce((s, b) => s + b.value, 0) * (1 - hair), haircutPct: hair * 100,
+      bnbStablesUsd: funds.usdcUsd + funds.usdtUsd, bstocksAfterHaircutUsd: afterHaircutUsd, haircutPct: hair * 100,
     };
     const p = await buildProposal(wallet, network, { venue: 'aster', accountRef: '', equityUsd: equity, usedUsd: used, positions: positions.slice(0, 5).map((x) => ({ symbol: x.symbol, valueUsd: Math.round(x.valueUsd) })) }, inputs);
     if (alreadyApplied(cfg, p)) return 'current rule already matches the fitted proposal';

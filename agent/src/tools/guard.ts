@@ -4,6 +4,7 @@ import type { Candidate, RejectedCandidate, Snapshot } from '../types';
 import { splitFunding } from './funding';
 import { legInConfig } from './hedgeLeg';
 import { isLocked } from './store';
+import { blockedReason, haircutFor } from './integrity';
 import { ACTIVE_RULE_VENUES, minCooldownSec, minDepositBase } from './venueRules';
 
 // Hard safety checks in code. The LLM can never loosen these: every candidate passes through here before the
@@ -24,8 +25,9 @@ function fundingProblem(s: Snapshot, c: Pick<Candidate, 'amountBaseUnit' | 'fund
     const reserve = BigInt(s.config.rebalance.keepBscReserveBaseUnit);
     if (BigInt(Math.floor(s.bsc.usdcUsd * 1e6)) - sp.usdcBase < reserve) return 'would dip below the BNB reserve';
   }
-  const haircut = s.config.collateral.bstockHaircut;
   for (const leg of sp.sales) {
+    const untrusted = blockedReason(s, leg.symbol); if (untrusted) return `selling ${leg.symbol} for margin is on hold: ${untrusted}`;
+    const haircut = haircutFor(s, leg.symbol);
     if (!s.config.rebalance.sellOrder.includes(leg.symbol)) return `${leg.symbol} is not in the list of bStocks you allow the agent to sell`;
     const h = s.bsc.bstocks.find((b) => b.symbol === leg.symbol);
     if (!h || h.qty <= 0 || h.value <= 0) return `${leg.symbol} is not held`;
@@ -44,6 +46,8 @@ export function checkCandidate(c: Candidate, s: Snapshot, now = new Date()): str
     // A trade the user asked for in the chat and approved need not be a saved hedge leg; every other check still applies.
     if (!c.chat && !s.config.hedge.enabled) return 'hedging is off';
     if (!c.hedge || (!c.chat && !legInConfig(s.config.hedge.legs, c.hedge))) return 'hedge leg not in config';
+    // Price integrity: do not hedge against a bStock whose price is not trusted (a reduce-only close never relies on it).
+    if (!c.hedge.reduceOnly) { const untrusted = blockedReason(s, c.hedge.proxyFor ? `${c.hedge.proxyFor}B` : c.hedge.bstock); if (untrusted) return `hedge on hold: ${untrusted}`; }
     const mp = c.plan?.marginPlan;
     if (mp && mp.moveUsd > 0) {
       const base = (BigInt(Math.round(mp.moveUsd * 100)) * 10_000n).toString();

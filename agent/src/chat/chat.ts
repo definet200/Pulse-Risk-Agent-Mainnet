@@ -21,6 +21,7 @@ import { log } from '../log';
 import { readPrompt } from '../llm/prompts';
 import * as app from '../tools/appApi';
 import { collectSnapshot } from '../tools/collect';
+import { integrityDetail } from '../tools/integrity';
 import { assessRisk } from '../risk/plan';
 import { buildStatus } from '../status';
 import type { Snapshot } from '../types';
@@ -178,6 +179,12 @@ function makeTools(ctx: Ctx): StructuredToolInterface[] {
       const facts = buildFacts(s, { actions: [], events: [] }, null, ctx.source!).map((f) => ({ label: f.label, value: f.value }));
       return ok(ctx, facts, ctx.sourceNote ?? undefined);
     }, { name: 'get_portfolio', description: "Read the user's portfolio: holdings, hedges, positions, balances, limits, settings, mode, modelled loss, events, news flags. Use for anything about their current state.", schema: z.object({}) }),
+
+    tool(async () => {
+      ctx.steps.push({ tool: 'get_price_integrity', label: 'Checked the bStock price integrity' });
+      const s = await ctx.ensureSnapshot();
+      return ok(ctx, integrityDetail(s));
+    }, { name: 'get_price_integrity', description: "Read-only. Price integrity of the user's bStock collateral: for each held token the Atlas oracle price (age, consensus), the CoinMarketCap DEX price and pool liquidity, the stock's perp price, the gaps between them, the verdict (ok, watch, block, unavailable) and the collateral haircut used. Use for 'can I trust the price of NVDAB', 'why is my haircut higher', 'why will the agent not hedge'. If it says the layer is off, say so.", schema: z.object({}) }),
 
     tool(async ({ limit }: { limit?: number }) => {
       ctx.steps.push({ tool: 'get_activity', label: 'Read recent activity' }); ctx.ui.showActivity = true;

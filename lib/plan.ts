@@ -11,7 +11,7 @@ export interface FundingPlan { sources: { source: string; amountUsd: number }[];
  * Which BNB-chain funds pay for a top-up of `amountBaseUnit` (sized by planRule in lib/risk-rules.ts):
  * stables above the reserve first, then bStocks in the user's sell order, valued after the haircut.
  */
-export function planFunding(amountBaseUnit: string, funding: Funding, cfg: AgentConfig['rebalance'], haircut: number): FundingPlan {
+export function planFunding(amountBaseUnit: string, funding: Funding, cfg: AgentConfig['rebalance'], haircut: number | ((symbol: string) => number)): FundingPlan {
   const need = Number(BigInt(amountBaseUnit)) / 1e6;
   {
     let left = need;
@@ -30,7 +30,7 @@ export function planFunding(amountBaseUnit: string, funding: Funding, cfg: Agent
           const h = funding.bstocks.find((b) => b.symbol === sym);
           if (!h || h.value <= 0) continue;
           // Selling raises cash at market value; the haircut is the buffer kept for slippage/price risk.
-          const take = Math.min(h.value * (1 - haircut), left);
+          const take = Math.min(h.value * (1 - (typeof haircut === 'function' ? haircut(sym) : haircut)), left);
           if (take > 0) { sources.push({ source: `sell ${sym}`, amountUsd: round2(take) }); left -= take; }
         }
       }

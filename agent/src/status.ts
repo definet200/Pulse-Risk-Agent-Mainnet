@@ -4,6 +4,7 @@ import { effectiveMode } from './policy';
 import { assessRisk } from './risk/plan';
 import type { Snapshot } from './types';
 import { readinessAlerts, type ReadinessEnv } from './readiness';
+import { integrityAlerts } from './tools/integrity';
 
 // The always-visible status the app shows (spec "Always-visible status"): mode, limits used today, coverage, the next
 // event, the last news scan, what is monitored and what is not. Built from the snapshot alone, so it is posted
@@ -27,6 +28,7 @@ export function buildStatus(s: Snapshot, extra: { news?: NewsView[]; newsAt?: st
   if (risk && !risk.solution.feasible) alerts.push(`Your ${risk.limitPct}% limit cannot be reached with the hedges available. Modelled loss after hedging: ${r2(risk.solution.varAfter * 100)}%.`);
   if (risk && risk.solution.varNow * 100 > risk.limitPct + 1e-9 && risk.hedgedPct < risk.solution.requiredHedgeRatio * 100 - 1) alerts.push(`Hedged ${risk.hedgedPct}% of the portfolio, ${r2(risk.solution.requiredHedgeRatio * 100)}% needed for your limit.`);
   if (extra.readiness) for (const a of readinessAlerts(s, extra.readiness)) alerts.push(`Needs your attention: ${a}`);
+  alerts.push(...integrityAlerts(s));
   if (risk) for (const x of risk.tickers.filter((t2) => t2.bucket === 'none')) alerts.push(`${x.ticker} has no perp market to hedge on: $${r2(x.usd)} stays unhedged.`);
 
   return {

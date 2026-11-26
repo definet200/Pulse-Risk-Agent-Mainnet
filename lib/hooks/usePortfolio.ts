@@ -4,6 +4,8 @@ import { useAccount } from 'wagmi';
 import { useBscBalances } from './useBscBalances';
 import { useBStockTickers } from './useBStockTickers';
 import { useAsterAccount, useDeriveAccount } from './useVenues';
+import { useIntegrity } from './useIntegrity';
+import { haircutFor } from '@/lib/integrity-view';
 import { toFloat } from '@/lib/format';
 
 export const DEFAULT_HAIRCUT = 0.3;
@@ -15,6 +17,8 @@ export function usePortfolio(haircut = DEFAULT_HAIRCUT) {
   const tickers = useBStockTickers();
   const aster = useAsterAccount();
   const derive = useDeriveAccount();
+  // Price integrity: empty (flat haircut for every token) unless the switch is on and data has loaded.
+  const integ = useIntegrity();
 
   return useMemo(() => {
     const price = (s: string) => tickers.data?.find((t) => t.symbol === s)?.price ?? null;
@@ -23,7 +27,7 @@ export function usePortfolio(haircut = DEFAULT_HAIRCUT) {
     const stocks = bsc.holdings.filter((h) => h.raw > 0n).map((h) => {
       const qty = toFloat(h.ui, 18); const p = price(h.symbol);
       const tk = tickers.data?.find((t) => t.symbol === h.symbol);
-      return { ...h, qty, price: p, value: p !== null ? qty * p : null, changePct: tk?.changePct ?? null, collateral: p !== null ? qty * p * (1 - haircut) : null };
+      return { ...h, qty, price: p, value: p !== null ? qty * p : null, changePct: tk?.changePct ?? null, collateral: p !== null ? qty * p * (1 - haircutFor(h.symbol, haircut, integ)) : null, haircutUsed: haircutFor(h.symbol, haircut, integ) };
     });
     const stocksValue = stocks.reduce((s, x) => s + (x.value ?? 0), 0);
     const stocksCollateral = stocks.reduce((s, x) => s + (x.collateral ?? 0), 0);
@@ -55,5 +59,5 @@ export function usePortfolio(haircut = DEFAULT_HAIRCUT) {
       derive: { state: derive.data?.state ?? (derive.isLoading ? 'loading' : 'signed_out'), equity: deriveEquity, usage: deriveUsage, positions: subs.flatMap((s) => s.positions), subaccountId: ds?.subaccount_id },
       total,
     };
-  }, [address, bsc, tickers.data, aster.data, aster.isLoading, aster.isError, aster.error, derive.data, derive.isLoading, haircut]);
+  }, [address, bsc, tickers.data, aster.data, aster.isLoading, aster.isError, aster.error, derive.data, derive.isLoading, haircut, integ]);
 }

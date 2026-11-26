@@ -39,7 +39,8 @@ describe('AgentConfig', () => {
     expect(c.hedge.news).toEqual({ enabled: true });
   });
   it('rejects out-of-bound limits', () => {
-    expect(AgentConfig.safeParse({ ...legacy, limits: { ...DEFAULT_LIMITS, maxLeverage: 50 } }).success).toBe(false);
+    expect(AgentConfig.safeParse({ ...legacy, limits: { ...DEFAULT_LIMITS, maxLeverage: 126 } }).success).toBe(false);   // cap is the venue's highest leverage (raised from 10 to 125 for leverage trading)
+    expect(AgentConfig.safeParse({ ...legacy, limits: { ...DEFAULT_LIMITS, maxLeverage: 20 } }).success).toBe(true);
     expect(AgentConfig.safeParse({ ...legacy, risk: { ...DEFAULT_RISK, lossTolerancePct: 0 } }).success).toBe(false);
   });
 });

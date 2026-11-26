@@ -20,6 +20,8 @@ import { ProposalCard } from '@/components/risk/ProposalCard';
 import { ActionCard, ActionHistory, ModeToggle } from '@/components/risk/ActionCard';
 import { HedgeStatus } from '@/components/risk/HedgeStatus';
 import { CheckSchedule } from '@/components/risk/CheckSchedule';
+import { PriceIntegrity } from '@/components/risk/PriceIntegrity';
+import { useIntegrity } from '@/lib/hooks/useIntegrity';
 import { LatestRun } from '@/components/risk/LatestRun';
 import { LimitsPanel } from '@/components/risk/LimitsPanel';
 import { ActivityFeed, type EventRow } from '@/components/risk/ActivityFeed';
@@ -39,6 +41,7 @@ export default function RiskPage() {
   useEffect(() => { if (loaded.data) setCfg(loaded.data.config); }, [loaded.data]);
 
   const p = usePortfolio(cfg.collateral.bstockHaircut);
+  const integ = useIntegrity();
   const risk = useRiskAccounts();
   const bscStables = (p.bsc.usdc ?? 0) + (p.bsc.usdt ?? 0);
   const k = useRiskKpis(risk.accounts, p.stocksValue, p.stocksCollateral, bscStables);
@@ -94,6 +97,8 @@ export default function RiskPage() {
 
       <CheckSchedule schedule={cfg.schedule ?? { auto: true, runNowAt: null }} onChange={(sch) => persist({ ...cfg, schedule: sch })} />
 
+      <PriceIntegrity enabled={cfg.integrity?.enabled ?? true} onToggle={(v) => persist({ ...cfg, integrity: { enabled: v } })} />
+
       <HedgeStatus onKillSwitch={(next) => void persist({ ...cfg, limits: { ...cfg.limits, killSwitch: next } })} />
 
       <RiskKpiStrip k={k} />
@@ -111,7 +116,7 @@ export default function RiskPage() {
         onRearm={async (key) => { await getJson('/api/agent/rule-state', { method: 'POST', body: JSON.stringify({ network, ruleKey: key, action: 'rearm' }) }); void qc.invalidateQueries({ queryKey: ['rule-states'] }); }} />
 
       <div className="grid gap-4 xl:grid-cols-2">
-        <ScenarioShock accounts={risk.accounts} rules={rules} stocksValue={p.stocksValue} bscStables={bscStables} haircut={cfg.collateral.bstockHaircut} />
+        <ScenarioShock accounts={risk.accounts} rules={rules} stocksValue={p.stocksValue} bscStables={bscStables} haircut={integ.enabled && Object.keys(integ.bySymbol).length > 0 && p.stocksValue > 0 ? 1 - p.stocksCollateral / p.stocksValue : cfg.collateral.bstockHaircut} />
 
         <HedgePanel hedge={cfg.hedge} onChange={(h) => void saveHedge(h)} held={held} accounts={risk.accounts} perpMarkets={markets.data} />
         <section className="panel p-5">

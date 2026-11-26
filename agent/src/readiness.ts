@@ -1,5 +1,6 @@
 import { ASTER_MIN_NOTIONAL_USD } from '../../lib/aster';
 import type { Snapshot } from './types';
+import { haircutFor } from './tools/integrity';
 
 // "Needs your attention": everything that would silently stop the agent from acting on its own, each with the fix.
 // Pure: the tick loop gathers the few live numbers (dry-run flag, agent gas) and passes them in.
@@ -44,7 +45,7 @@ export function readinessAlerts(s: Snapshot, env: ReadinessEnv): string[] {
   if (rules.length) {
     const minMove = Math.min(...rules.map((r) => Number(BigInt(r.minMoveBaseUnit)) / 1e6));
     const usdcAllowed = Number(BigInt(s.bsc.allowanceUsdcBase || '0')) / 1e6;
-    const sellable = cfg.rebalance.sources.includes('sell_bstocks') ? s.bsc.bstocks.filter((b) => cfg.rebalance.sellOrder.includes(b.symbol) && (b.allowanceQty ?? 0) > 0).reduce((a, b) => a + Math.min(b.qty, b.allowanceQty ?? 0) * (b.qty > 0 ? b.value / b.qty : 0) * (1 - cfg.collateral.bstockHaircut), 0) : 0;
+    const sellable = cfg.rebalance.sources.includes('sell_bstocks') ? s.bsc.bstocks.filter((b) => cfg.rebalance.sellOrder.includes(b.symbol) && (b.allowanceQty ?? 0) > 0).reduce((a, b) => a + Math.min(b.qty, b.allowanceQty ?? 0) * (b.qty > 0 ? b.value / b.qty : 0) * (1 - haircutFor(s, b.symbol)), 0) : 0;
     if (usdcAllowed + sellable < minMove) out.push(`No budget for top-ups: the agent may use ${usd(usdcAllowed + sellable)}, the smallest top-up is ${usd(minMove)}. Allow at least ${usd(minMove)} under "Agent budget for top-ups" on the Risk page.`);
   }
 
