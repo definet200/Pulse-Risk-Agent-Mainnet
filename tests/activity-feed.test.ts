@@ -5,10 +5,10 @@ const row = (o: Partial<EventRow>): EventRow => ({ id: 1, kind: 'info', venue: '
 
 describe('activity feed', () => {
   it('turns kind and venue into readable labels', () => {
-    expect(eventLabel(row({ kind: 'info', venue: 'lighter' }))).toBe('Note · Lighter');
-    expect(eventLabel(row({ kind: 'rebalance', venue: 'derive' }))).toBe('Margin move · Derive');
+    expect(eventLabel(row({ kind: 'info', venue: 'lighter' }))).toBe('Note · Perps');
+    expect(eventLabel(row({ kind: 'rebalance', venue: 'derive' }))).toBe('Margin move · Options');
     expect(eventLabel(row({ kind: 'error', venue: null }))).toBe('Problem');
-    expect(eventLabel(row({ kind: 'hedge', venue: 'lighter' }))).toBe('Hedge · Lighter');
+    expect(eventLabel(row({ kind: 'hedge', venue: 'lighter' }))).toBe('Hedge · Perps');
   });
   it('keeps the AI reasoning in payload.details, not in the message', () => {
     const e = row({ message: 'Dry run: would top up $10.00 on Lighter.', payload: JSON.stringify({ details: { reasoning: 'Utilization is 82%...' } }) });

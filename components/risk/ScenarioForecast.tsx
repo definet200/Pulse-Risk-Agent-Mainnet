@@ -130,7 +130,7 @@ export function ScenarioForecast({ accounts, rules, stocks, initialLegs = [] }: 
         if (keyOf({ kind: 'linear', id: '', account: a.title, label: p.market, amount: 0, price0: 0 }) !== u) continue;
         if (p.liqPrice && p.markPrice) {
           const m = p.liqPrice / p.markPrice - 1;
-          if (Math.abs(m) <= R) out.push({ move: m, label: `Liq ${a.title.replace(/^(Lighter|Derive) · /, '')}`, kind: 'liq' });
+          if (Math.abs(m) <= R) out.push({ move: m, label: `Liq ${a.title.replace(/^(Perps|Options|Lighter|Derive) · /, '')}`, kind: 'liq' });
         }
       }
       const rule = rules.find((r) => ruleKey(r) === a.key);
@@ -143,7 +143,7 @@ export function ScenarioForecast({ accounts, rules, stocks, initialLegs = [] }: 
       };
       if (bad(0)) continue; // already in the top-up zone: the card says so
       const c = firstCrossing(bad, R);
-      for (const m of [c.down, c.up]) if (m !== null) out.push({ move: m, label: `Top-up ${a.title.replace(/^(Lighter|Derive) · /, '')}`, kind: 'trigger' });
+      for (const m of [c.down, c.up]) if (m !== null) out.push({ move: m, label: `Top-up ${a.title.replace(/^(Perps|Options|Lighter|Derive) · /, '')}`, kind: 'trigger' });
     }
     return out;
   }, [accounts, rules, uLegs, u, R, d, iv, nowMs]);
@@ -173,7 +173,7 @@ export function ScenarioForecast({ accounts, rules, stocks, initialLegs = [] }: 
       <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="font-semibold">Scenario forecast</h3>
-          <p className="text-[11px] text-muted">Options repriced with Black-Scholes at Derive&apos;s live mark IV; perps and bStocks linear. Hover the chart to read any point.</p>
+          <p className="text-[11px] text-muted">Options repriced with Black-Scholes at the live options mark IV; perps and bStocks linear. Hover the chart to read any point.</p>
         </div>
         <div className="flex flex-wrap gap-1">
           {underlyings.map((x) => (
@@ -227,7 +227,7 @@ export function ScenarioForecast({ accounts, rules, stocks, initialLegs = [] }: 
           </div>
 
           <div className="mt-4 overflow-x-auto">
-            <div className="mb-1 text-xs text-muted">Greeks at {at === 0 ? 'current spot' : `${at > 0 ? '+' : ''}${(at * 100).toFixed(1)}%`}{d ? `, +${d}d` : ''}{ivPts ? `, IV ${ivPts > 0 ? '+' : ''}${ivPts}` : ''} (position-weighted) · <span className="text-white">Derive live</span> shown under each option</div>
+            <div className="mb-1 text-xs text-muted">Greeks at {at === 0 ? 'current spot' : `${at > 0 ? '+' : ''}${(at * 100).toFixed(1)}%`}{d ? `, +${d}d` : ''}{ivPts ? `, IV ${ivPts > 0 ? '+' : ''}${ivPts}` : ''} (position-weighted) · <span className="text-white">Options live</span> shown under each option</div>
             <table className="w-full min-w-[760px] text-xs num">
               <thead><tr>{['Leg', 'Account', 'Size', 'IV', 'Model / mark', 'Δ (units)', 'Δ $ per 1%', 'Γ', 'Vega / vol pt', 'Θ / day'].map((h) => <th key={h} className="th">{h}</th>)}</tr></thead>
               <tbody>

@@ -88,8 +88,8 @@ export function HedgePanel({ hedge, onChange, held, accounts, lighterMarkets }: 
   const deriveCcy = families.has(`${underlying}-PERP`) || families.has(`${underlying}-OPTION`) ? underlying : proxy && (families.has(`${proxy}-PERP`) || families.has(`${proxy}-OPTION`)) ? proxy : null;
   const derivePerp = !!deriveCcy && families.has(`${deriveCcy}-PERP`);
   const derivePut = !!deriveCcy && families.has(`${deriveCcy}-OPTION`);
-  const lighterWhy = lighterMarkets === undefined ? `Lighter ${network} is not responding` : `No ${underlying} market on Lighter ${network}`;
-  const deriveWhy = universes.isLoading ? 'Loading…' : `No ${underlying} market on Derive ${network}`;
+  const lighterWhy = lighterMarkets === undefined ? `Perps ${network} is not responding` : `No ${underlying} perps market on ${network}`;
+  const deriveWhy = universes.isLoading ? 'Loading…' : `No ${underlying} options market on ${network}`;
   const v: Venue = venue === 'lighter' && !lighterTarget && (derivePerp || derivePut) ? 'derive' : venue === 'derive' && !deriveCcy && lighterTarget ? 'lighter' : venue;
   const k: Kind = v === 'lighter' ? 'perp' : kind === 'put' && !derivePut ? 'perp' : kind === 'perp' && !derivePerp && derivePut ? 'put' : kind;
   const target: Target | null = v === 'lighter' ? lighterTarget : deriveCcy ? { market: deriveCcy, proxy: deriveCcy !== underlying } : null;
@@ -120,7 +120,7 @@ export function HedgePanel({ hedge, onChange, held, accounts, lighterMarkets }: 
         <div className="mt-4 space-y-2">
           {hedge.legs.map((leg, i) => {
             const pl = plans[i];
-            const venueName = leg.venue === 'lighter' ? 'Lighter' : 'Derive';
+            const venueName = leg.venue === 'lighter' ? 'Perps' : 'Options';
             const what = leg.kind === 'put' ? `${leg.market} puts` : `${leg.market}-PERP`;
             const verb = leg.kind === 'put' ? 'Buy' : 'Short';
             const ok = pl && pl.targetUnits !== null && !pl.act;
@@ -162,14 +162,14 @@ export function HedgePanel({ hedge, onChange, held, accounts, lighterMarkets }: 
         </Row>
         <Row n={2} label="Hedge on">
           <div className="grid grid-cols-2 gap-2">
-            <VenueButton on={v === 'lighter'} disabled={!lighterTarget} onClick={() => setVenue('lighter')} title="Lighter" sub={lighterTarget ? `${lighterTarget.market}-PERP${lighterTarget.proxy ? ' (index proxy)' : ''}` : lighterWhy} />
-            <VenueButton on={v === 'derive'} disabled={!deriveCcy} onClick={() => setVenue('derive')} title="Derive" sub={deriveCcy ? `${deriveCcy} perp${derivePut ? ' & puts' : ''}${deriveCcy !== underlying ? ' (index proxy)' : ''} · ${families.get(`${deriveCcy}-PERP`) ?? families.get(`${deriveCcy}-OPTION`)} universe` : deriveWhy} />
+            <VenueButton on={v === 'lighter'} disabled={!lighterTarget} onClick={() => setVenue('lighter')} title="Perps" sub={lighterTarget ? `${lighterTarget.market}-PERP${lighterTarget.proxy ? ' (index proxy)' : ''}` : lighterWhy} />
+            <VenueButton on={v === 'derive'} disabled={!deriveCcy} onClick={() => setVenue('derive')} title="Options" sub={deriveCcy ? `${deriveCcy} perp${derivePut ? ' & puts' : ''}${deriveCcy !== underlying ? ' (index proxy)' : ''} · ${families.get(`${deriveCcy}-PERP`) ?? families.get(`${deriveCcy}-OPTION`)} universe` : deriveWhy} />
           </div>
         </Row>
         <Row n={3} label="How">
           <div className="flex flex-wrap gap-1.5">
             <Chip on={k === 'perp'} disabled={v === 'derive' && !derivePerp} onClick={() => setKind('perp')}>Short the perp</Chip>
-            <Chip on={k === 'put'} disabled={v !== 'derive' || !derivePut} onClick={() => setKind('put')} title={v === 'lighter' ? 'Lighter has no options' : ''}>Buy protective puts{v === 'lighter' ? ' (Derive only)' : ''}</Chip>
+            <Chip on={k === 'put'} disabled={v !== 'derive' || !derivePut} onClick={() => setKind('put')} title={v === 'lighter' ? 'Perps has no options' : ''}>Buy protective puts{v === 'lighter' ? ' (options only)' : ''}</Chip>
           </div>
           {k === 'put' && (
             <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
@@ -183,7 +183,7 @@ export function HedgePanel({ hedge, onChange, held, accounts, lighterMarkets }: 
         </Row>
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3">
           <p className="text-xs text-muted">
-            {target ? <>{k === 'put' ? 'Buy' : 'Short'} <span className="text-white">{k === 'put' ? `${target.market} puts` : `${target.market}-PERP`}</span> on {v === 'lighter' ? 'Lighter' : 'Derive'} worth {ratio}% of your {bstock}{held[bstock]?.qty ? ` (${fmtNum(held[bstock].qty, 3)})` : ''}.{v === 'derive' ? ' Needs a Derive subaccount in that universe.' : ''}</> : `No hedge available for ${bstock} on this network.`}
+            {target ? <>{k === 'put' ? 'Buy' : 'Short'} <span className="text-white">{k === 'put' ? `${target.market} puts` : `${target.market}-PERP`}</span> on {v === 'lighter' ? 'perps' : 'options'} worth {ratio}% of your {bstock}{held[bstock]?.qty ? ` (${fmtNum(held[bstock].qty, 3)})` : ''}.{v === 'derive' ? ' Needs an options subaccount in that universe.' : ''}</> : `No hedge available for ${bstock} on this network.`}
           </p>
           <button className="btn-primary inline-flex h-9 items-center gap-1 px-4 py-0 text-sm" disabled={!target || duplicate} onClick={add}>
             <Plus size={14} />{duplicate ? 'Already added' : 'Add hedge'}

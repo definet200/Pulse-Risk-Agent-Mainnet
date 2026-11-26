@@ -16,8 +16,8 @@ interface Withdrawal { venue: Venue; account: string; amount: string; fee: strin
 
 const MIN: Record<Venue, number> = { lighter: 1, derive: 5 };
 const INFO: Record<Venue, string> = {
-  lighter: 'Secure withdrawal from the main account · arrives in about 26 min · Lighter allows 3 withdrawals per 2 hours',
-  derive: 'Arrives in about 14 min · Derive charges a fee of about $1 (capped at $3) from the amount',
+  lighter: 'Secure withdrawal from the main account · arrives in about 26 min · perps allows 3 withdrawals per 2 hours',
+  derive: 'Arrives in about 14 min · options charges a fee of about $1 (capped at $3) from the amount',
 };
 const AMT = /^\d+(\.\d{1,6})?$/;
 const newIdem = () => (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`);
@@ -76,14 +76,14 @@ export function WithdrawFlow({ onBridge }: { onBridge: () => void }) {
 
       <div className="mb-3 grid grid-cols-2 gap-1 rounded-xl bg-bg p-1 text-sm">
         {(['lighter', 'derive'] as const).map((v) => (
-          <button key={v} onClick={() => { setVenue(v); change(''); }} className={clsx('rounded-lg py-2', venue === v ? 'bg-panel2 text-white' : 'text-muted hover:text-white')}>{v === 'lighter' ? 'Lighter' : 'Derive'}</button>
+          <button key={v} onClick={() => { setVenue(v); change(''); }} className={clsx('rounded-lg py-2', venue === v ? 'bg-panel2 text-white' : 'text-muted hover:text-white')}>{v === 'lighter' ? 'Perps' : 'Options'}</button>
         ))}
       </div>
 
       <div className="rounded-2xl bg-bg p-4">
         <div className="mb-2 flex items-center justify-between gap-2 text-xs text-muted">
           {venue === 'lighter'
-            ? <span>From {master ? `Main #${master.index}` : 'your Lighter main account'}</span>
+            ? <span>From {master ? `Main #${master.index}` : 'your perps main account'}</span>
             : <select className="rounded-lg bg-panel2 px-2 py-1 text-xs text-white" value={sub?.subaccount_id ?? ''} onChange={(e) => { setSubId(Number(e.target.value)); change(''); }}>
                 {deriveSubs.length === 0 && <option value="">No funded subaccount</option>}
                 {deriveSubs.map((s) => <option key={s.subaccount_id} value={s.subaccount_id}>#{s.subaccount_id} · {s.universeName ?? (s.isFallback ? 'fallback' : 'subaccount')} · ${Number(s.collaterals_value).toFixed(2)}</option>)}
@@ -99,7 +99,7 @@ export function WithdrawFlow({ onBridge }: { onBridge: () => void }) {
       </div>
 
       {venue === 'lighter' && subsWithFunds.length > 0 && <p className="mt-3 text-xs text-muted">Funds in sub-accounts ({subsWithFunds.map((a) => `#${a.index}`).join(', ')}) withdraw from Main. Move them to Main first under Perps → Sub-accounts.</p>}
-      {!ready && <p className="mt-3 text-xs text-accent">{venue === 'lighter' ? 'Register your Lighter agent key on the Agent keys page first.' : 'Register your Derive agent key on the Agent keys page first.'}</p>}
+      {!ready && <p className="mt-3 text-xs text-accent">{venue === 'lighter' ? 'Register your perps agent key on the Agent keys page first.' : 'Register your options agent key on the Agent keys page first.'}</p>}
       {problem && <p className="mt-3 text-xs text-accent">{problem}</p>}
 
       <button className="btn-primary mt-4 w-full" disabled={!ready || n === null || !!problem || busy || (venue === 'derive' && !sub)} onClick={() => void submit()}>
@@ -114,7 +114,7 @@ export function WithdrawFlow({ onBridge }: { onBridge: () => void }) {
       </div>
 
       <div className="mt-4">
-        <div className="mb-1 text-xs text-muted">Recent {venue === 'lighter' ? 'Lighter' : 'Derive'} withdrawals</div>
+        <div className="mb-1 text-xs text-muted">Recent {venue === 'lighter' ? 'perps' : 'options'} withdrawals</div>
         {history.isLoading ? <p className="text-xs text-muted">Loading…</p>
           : history.error ? <p className="text-xs text-down">{(history.error as Error).message}</p>
           : !history.data?.length ? <p className="text-xs text-muted">None yet.</p>
@@ -122,7 +122,7 @@ export function WithdrawFlow({ onBridge }: { onBridge: () => void }) {
               <div key={`${w.timestamp}-${i}`} className="flex items-center justify-between rounded-lg bg-bg px-3 py-2 text-xs">
                 <span className="num">{Number(w.amount).toFixed(2)} USDC{w.fee ? <span className="text-muted"> · fee {Number(w.fee).toFixed(2)}</span> : null}</span>
                 <span className="text-muted">{new Date(w.timestamp).toLocaleString()}</span>
-                <span className={w.failed ? 'text-down' : w.done ? 'text-up' : 'text-accent'} title={w.status === 'claimable' ? 'Ready on Ethereum. Lighter normally completes the claim; if it stays here for hours, claim it on app.lighter.xyz.' : undefined}>
+                <span className={w.failed ? 'text-down' : w.done ? 'text-up' : 'text-accent'} title={w.status === 'claimable' ? 'Ready on Ethereum. The venue normally completes the claim; if it stays here for hours, claim it on app.lighter.xyz.' : undefined}>
                   {w.status === 'claimable' ? 'ready on Ethereum' : w.status}
                 </span>
               </div>

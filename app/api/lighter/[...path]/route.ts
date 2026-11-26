@@ -30,7 +30,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ path: string[] 
   } catch (e) {
     const m = (e as Error).message;
     if (m.startsWith('venue_unavailable:')) {
-      return Response.json({ error: `Lighter ${n} API is unavailable right now (HTTP ${m.split(':')[1]})`, unavailable: true }, { status: 503 });
+      return Response.json({ error: `The perps venue's ${n} API is unavailable right now (HTTP ${m.split(':')[1]})`, unavailable: true }, { status: 503 });
     }
     return Response.json({ error: m }, { status: 502 });
   }

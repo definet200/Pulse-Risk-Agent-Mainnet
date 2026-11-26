@@ -77,7 +77,7 @@ export default function OptionsPage() {
         <div className="flex items-center gap-3">
           <span className="grid h-8 w-8 place-items-center rounded-full bg-[#00b3ff]/15 text-xs font-bold text-[#5fd0ff]">D</span>
           <span className="text-lg font-medium">{ccy} Options</span>
-          <span className="rounded-md bg-panel2 px-2 py-0.5 text-xs text-[#c9ccd6]">Derive{network === 'testnet' ? ' testnet' : ''}</span>
+          <span className="rounded-md bg-panel2 px-2 py-0.5 text-xs text-[#c9ccd6]">Options{network === 'testnet' ? ' testnet' : ''}</span>
         </div>
         <div><div className="label">Index</div><div className="num text-lg font-semibold">{index ? fmtNum(index, 2) : '—'}</div></div>
         {universe && <div><div className="label">Risk universe</div>
@@ -178,7 +178,7 @@ function EnableUniverse({ managerId, name, compact }: { managerId: number; name:
   }
   return (
     <div className={clsx(!compact && 'rounded-xl bg-accent/10 border border-accent/30 p-3', 'text-sm')}>
-      {!compact && <div className="mb-2 text-xs text-[#c9ccd6]">Derive needs a separate subaccount for the <b>{name}</b> universe. Fund one from your existing margin (≈$1 fee).</div>}
+      {!compact && <div className="mb-2 text-xs text-[#c9ccd6]">Options needs a separate subaccount for the <b>{name}</b> universe. Fund one from your existing margin (≈$1 fee).</div>}
       <div className="flex items-center gap-2">
         <input className="input w-24 py-1.5 text-sm" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} aria-label="USDC to move" />
         <span className="text-xs text-muted">USDC</span>
@@ -237,7 +237,7 @@ function OptionTicket({ sel, onClear, universeId }: { sel: { name: string; side:
         <div className="flex justify-between"><span className="text-muted">Available margin</span><span className="num">{available === null ? '—' : fmtUsd(available)}</span></div>
         <div className="flex justify-between"><span className="text-muted">Collateral</span><span className="num">{sub ? fmtUsd(+sub.collaterals_value) : '—'}</span></div>
         {sub && <div className="flex justify-between text-xs"><span className="text-muted">Subaccount</span><span className="num">#{sub.subaccount_id} · {sub.universeName ?? ''} {sub.margin_type}</span></div>}
-        {acct.data?.state === 'needs_agent' && <div className="text-xs text-muted">Register the Derive agent to see margin.</div>}
+        {acct.data?.state === 'needs_agent' && <div className="text-xs text-muted">Register the options agent to see margin.</div>}
       </div>
       {notEnabled && smManager && universe && <EnableUniverse managerId={smManager.managerId} name={universe.name} />}
       {sel ? (
@@ -249,16 +249,16 @@ function OptionTicket({ sel, onClear, universeId }: { sel: { name: string; side:
       <div className="rounded-xl bg-bg p-3 text-sm space-y-1">
         <div className="flex justify-between"><span className="text-muted">{side === 'buy' ? 'Premium paid' : 'Premium received'}</span><span className="num">{premium ? fmtUsd(premium) : '—'}</span></div>
         {available !== null && premium > 0 && side === 'buy' && <div className="flex justify-between text-xs"><span className="text-muted">Margin after</span><span className={clsx('num', short ? 'text-down' : '')}>{fmtUsd(available - premium)}</span></div>}
-        {side === 'sell' && premium > 0 && <div className="text-xs text-muted">Selling an option locks margin; Derive rejects the order if your headroom is too small.</div>}
+        {side === 'sell' && premium > 0 && <div className="text-xs text-muted">Selling an option locks margin; the order is rejected if your headroom is too small.</div>}
       </div>
-      {short && <div className="rounded-xl bg-down/10 px-3 py-2 text-xs text-down">Not enough margin. Deposit more USDC to Derive.</div>}
+      {short && <div className="rounded-xl bg-down/10 px-3 py-2 text-xs text-down">Not enough margin. Deposit more USDC to your options account.</div>}
       <AgentGate venue="derive" hasAccount={hasAccount}>
         <button className={side === 'buy' ? 'btn bg-up text-black' : 'btn bg-down text-black'} disabled={!sel || !(Number(amount) > 0) || (type === 'limit' && !(Number(price) > 0)) || busy || short || notEnabled} onClick={() => void submit()}>
           {busy ? 'Signing with agent…' : `${side === 'buy' ? 'Buy' : 'Sell'} ${sel?.name ?? 'option'}`}
         </button>
       </AgentGate>
       {msg && <div className={clsx('rounded-xl px-3 py-2 text-xs break-words', msg.ok ? 'bg-up/10 text-up' : 'bg-down/10 text-down')}>{msg.text}</div>}
-      <p className="text-[11px] text-muted leading-snug">Orders are signed by your Derive session key (scopes: trade, transfer between your own subaccounts, withdraw to you). Market orders use a worst price 2% through the touch.</p>
+      <p className="text-[11px] text-muted leading-snug">Orders are signed by your options session key (scopes: trade, transfer between your own subaccounts, withdraw to you). Market orders use a worst price 2% through the touch.</p>
     </div>
   );
 }
@@ -271,9 +271,9 @@ function DeriveAccountPanel() {
   const [cancelling, setCancelling] = useState<string | null>(null);
   const [cancelErr, setCancelErr] = useState<string | null>(null);
   const d = acct.data;
-  if (!d) return <Empty>Sign in to see Derive positions</Empty>;
-  if (d.state === 'no_account') return <Empty>No Derive account yet. Deposit first.</Empty>;
-  if (d.state === 'needs_agent' || !d.subaccounts) return <Empty>Register a Derive agent to read positions</Empty>;
+  if (!d) return <Empty>Sign in to see options positions</Empty>;
+  if (d.state === 'no_account') return <Empty>No options account yet. Deposit first.</Empty>;
+  if (d.state === 'needs_agent' || !d.subaccounts) return <Empty>Register an options agent to read positions</Empty>;
   const subs = d.subaccounts;
   const positions = subs.flatMap((s) => s.positions.map((p) => ({ ...p, sub: s })));
   const orders = subs.flatMap((s) => (s.open_orders ?? []).map((o) => ({ ...o, sub: s })));

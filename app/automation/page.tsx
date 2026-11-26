@@ -75,7 +75,7 @@ export default function RiskPage() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">Risk management</h1>
-          <p className="text-sm text-muted">Live risk across Lighter, every Derive subaccount and your bStocks, plus the rules the agent runs ({network}).</p>
+          <p className="text-sm text-muted">Live risk across perps, every options subaccount and your bStocks, plus the rules the agent runs ({network}).</p>
           {saved && <p className={clsx('mt-1 text-xs', saved.startsWith('Error') ? 'text-down' : 'text-up')}>{saved}</p>}
         </div>
         <ModeToggle mode={cfg.mode} autonomyExpiresAt={cfg.limits.autonomyExpiresAt} onChange={(m) => {

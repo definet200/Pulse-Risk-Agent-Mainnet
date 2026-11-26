@@ -184,8 +184,8 @@ export function RuleEditor({ initial, editing, accounts, rules, onSave, onCancel
               </select>
               <p className="text-[10px] text-muted">
                 {d.venue === 'lighter'
-                  ? (d.accountRef ? `Sub-account: top-ups land on Lighter main, then move main → Sub #${d.accountRef} (instant).` : 'Main account. Create sub-accounts under Perps → Sub-accounts.')
-                  : 'One Derive subaccount per risk universe (PRIME, MIDCAP, ALT, RWA). Enable more under Options → Risk universes.'}
+                  ? (d.accountRef ? `Sub-account: top-ups land on perps main, then move main → Sub #${d.accountRef} (instant).` : 'Main account. Create sub-accounts under Perps → Sub-accounts.')
+                  : 'One options subaccount per risk universe (PRIME, MIDCAP, ALT, RWA). Enable more under Options → Risk universes.'}
               </p>
             </div>
           );

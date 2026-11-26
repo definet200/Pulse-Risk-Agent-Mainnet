@@ -104,14 +104,14 @@ export function ChatWidget() {
                   {m.reply?.unsure && <div className="mt-2 rounded-md bg-yellow-400/10 px-2 py-1 text-xs text-yellow-400">Not sure: {m.reply.unsureReason}</div>}
                   {m.reply?.quotes?.map((q) => (
                     <div key={q.instrument} className="space-y-1.5 rounded-xl border border-line bg-panel p-2.5 text-[11px]">
-                      <div className="flex items-center justify-between"><span className="font-semibold">{q.instrument}</span><span className="text-muted">Derive · live</span></div>
+                      <div className="flex items-center justify-between"><span className="font-semibold">{q.instrument}</span><span className="text-muted">Options · live</span></div>
                       <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
                         <span className="text-muted">Contracts</span><span className="text-right">{q.contracts} at ${q.ask}</span>
                         <span className="text-muted">Premium + fees</span><span className="text-right font-semibold">${(q.premiumUsd + q.feesUsd).toFixed(2)}</span>
                         <span className="text-muted">Covers</span><span className="text-right">${q.coverUsd.toFixed(2)} of {q.ticker}</span>
                         <span className="text-muted">Implied vol</span><span className="text-right">{Math.round(q.iv * 100)}%</span>
                       </div>
-                      {q.oversized && <div className="rounded bg-amber-500/10 px-2 py-1 text-amber-300">Derive&apos;s minimum is {q.minContracts} contract (${q.coverUsd.toFixed(2)} of cover), more than your ${q.holdingUsd.toFixed(2)} of {q.ticker}.</div>}
+                      {q.oversized && <div className="rounded bg-amber-500/10 px-2 py-1 text-amber-300">The options minimum is {q.minContracts} contract (${q.coverUsd.toFixed(2)} of cover), more than your ${q.holdingUsd.toFixed(2)} of {q.ticker}.</div>}
                       <PayoffChart p={q.payoff} />
                     </div>
                   ))}

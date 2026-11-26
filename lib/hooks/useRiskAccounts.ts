@@ -34,11 +34,11 @@ export function useRiskAccounts() {
       const used = Math.max(0, eq - Number(la.available_balance));
       accounts.push({
         key: master ? 'lighter:' : `lighter:${la.index}`, venue: 'lighter', accountRef: master ? '' : String(la.index),
-        title: master ? 'Lighter · Main' : `Lighter · Sub #${la.index}`, label: master ? `Main #${la.index}` : `Sub #${la.index}`,
+        title: master ? 'Perps · Main' : `Perps · Sub #${la.index}`, label: master ? `Main #${la.index}` : `Sub #${la.index}`,
         health: { connected: true, accountUsd: eq, usedUsd: used, utilBps: eq > 0 ? Math.round((used / eq) * 10_000) : null },
         positions: la.positions.filter((p) => +p.position !== 0).map((p) => {
           const size = Math.abs(+p.position);
-          return { venue: 'lighter' as const, account: master ? 'Lighter · Main' : `Lighter · Sub #${la.index}`, market: `${p.symbol}-PERP`, side: p.sign > 0 ? 'long' as const : 'short' as const, size,
+          return { venue: 'lighter' as const, account: master ? 'Perps · Main' : `Perps · Sub #${la.index}`, market: `${p.symbol}-PERP`, side: p.sign > 0 ? 'long' as const : 'short' as const, size,
             valueUsd: Math.abs(+p.position_value), upnl: +p.unrealized_pnl, liqPrice: +p.liquidation_price || null,
             markPrice: size > 0 ? Math.abs(+p.position_value) / size : null, kind: 'perp' as const };
         }),
@@ -48,7 +48,7 @@ export function useRiskAccounts() {
       if (s.isFallback) continue;
       const coll = Number(s.collaterals_value);
       const used = Math.max(0, coll - Number(s.initial_margin));
-      const title = `Derive · ${s.universeName ?? `#${s.subaccount_id}`}`;
+      const title = `Options · ${s.universeName ?? `#${s.subaccount_id}`}`;
       accounts.push({
         key: `derive:${s.subaccount_id}`, venue: 'derive', accountRef: String(s.subaccount_id), title, label: `${s.universeName ?? ''} #${s.subaccount_id}`.trim(),
         health: { connected: true, accountUsd: coll + Number(s.positions_value ?? 0), usedUsd: used, utilBps: coll > 0 ? Math.round((used / coll) * 10_000) : null },

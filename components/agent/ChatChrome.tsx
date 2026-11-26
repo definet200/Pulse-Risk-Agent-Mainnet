@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 // Small pieces of the Pulse chat's terminal look: the working indicator, the empty state with quick prompts.
 
 const SPIN = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏';
-const STAGES = ['reading your live accounts', 'measuring volatility', 'checking Lighter and Derive', 'running the hedging agent', 'comparing venues', 'writing the answer'];
+const STAGES = ['reading your live accounts', 'measuring volatility', 'checking perps and options', 'running the hedging agent', 'comparing venues', 'writing the answer'];
 
 /** Replaces "Thinking...": a spinner, the stage it is likely on, and elapsed seconds (long answers take a minute). */
 export function Working() {
@@ -29,7 +29,7 @@ export function Working() {
 const PROMPTS = [
   ['Hedge my portfolio', 'runs the agent on your live numbers'],
   ['What is my risk right now?', 'modelled loss vs your limit'],
-  ['Price an NVDA put for my holding', 'live Derive quote + payoff'],
+  ['Price an NVDA put for my holding', 'live perp quote + payoff'],
   ['What is waiting for my approval?', 'requests with Approve / Reject'],
 ] as const;
 
@@ -41,7 +41,7 @@ export function ChatIntro({ onAsk }: { onAsk: (q: string) => void }) {
 ──/ \\  /   \\   __/ \\_____
      \\/     \\_/       pulse`}</pre>
       <div className="font-mono text-sm text-white">$ hello, I&apos;m pulse</div>
-      <p className="text-[13px] leading-5 text-muted">I watch your bStocks, Lighter and Derive accounts, propose hedges with their payoff, and place trades only after you press Approve. Ask anything, or try:</p>
+      <p className="text-[13px] leading-5 text-muted">I watch your bStocks, perps and options accounts, propose hedges with their payoff, and place trades only after you press Approve. Ask anything, or try:</p>
       <div className="grid gap-2">
         {PROMPTS.map(([q, hint]) => (
           <button key={q} type="button" onClick={() => onAsk(q)}

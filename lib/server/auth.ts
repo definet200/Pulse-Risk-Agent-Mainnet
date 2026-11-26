@@ -1,3 +1,4 @@
+import { venueWords } from '@/lib/venue-words';
 import 'server-only';
 import { createHmac, randomBytes } from 'node:crypto';
 import { cookies, headers } from 'next/headers';
@@ -79,5 +80,7 @@ export async function isAgent(): Promise<boolean> {
 }
 
 export function json(data: unknown, status = 200): Response {
-  return Response.json(data, { status, headers: { 'cache-control': 'no-store' } });
+  // Error text is shown to the user as is: it never names a venue (Lighter = perps, Derive = options). Data is untouched.
+  const shown = data && typeof data === 'object' && typeof (data as { error?: unknown }).error === 'string' ? { ...(data as object), error: venueWords((data as { error: string }).error) } : data;
+  return Response.json(shown, { status, headers: { 'cache-control': 'no-store' } });
 }

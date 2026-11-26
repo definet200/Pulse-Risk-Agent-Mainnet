@@ -6,7 +6,7 @@ import { Activity, ChevronDown, ChevronRight } from 'lucide-react';
 export interface EventRow { id: number; kind: string; venue: string | null; status: string | null; message: string; payload: string | null; created_at: number }
 
 const KIND: Record<string, string> = { info: 'Note', rebalance: 'Margin move', hedge: 'Hedge', error: 'Problem', status: 'Status', news: 'News', warning: 'Warning', bridge: 'Bridge' };
-const VENUE: Record<string, string> = { lighter: 'Lighter', derive: 'Derive', bsc: 'BNB' };
+const VENUE: Record<string, string> = { lighter: 'Perps', derive: 'Options', bsc: 'BNB' };
 export const eventLabel = (e: Pick<EventRow, 'kind' | 'venue'>) => `${KIND[e.kind] ?? e.kind.charAt(0).toUpperCase() + e.kind.slice(1)}${e.venue ? ` · ${VENUE[e.venue] ?? e.venue}` : ''}`;
 
 interface Details { reasoning?: string; safetyReview?: string; analysis?: string; concerns?: string[]; technical?: string }

@@ -95,8 +95,8 @@ function bar(pct: number | null, half = 8): string {
 // ── Typed agent log (illustrative copy of what the agent prints; real numbers appear after you connect) ──
 const LOG = [
   '$ pulse agent --watch',
-  '› read BNB · Lighter · Derive subs ...... ok',
-  '› live vol from Lighter candles ......... ok',
+  '› read BNB · perps · options subs ...... ok',
+  '› live vol from perps candles ........... ok',
   '› proxies MSTR→BTC SPY→US500 ............ ok',
   '› 99% loss vs your limit ....... hedge needed',
   '› venues  perp ✓  put ✓  proxy ✓  + payoff',
@@ -144,7 +144,7 @@ export function AsciiLanding({ tickers }: { tickers: Ticker[] }) {
             Your stocks, perps and options. <span className="text-accent">One pulse.</span>
           </h1>
           <p className="mx-auto mt-3 max-w-2xl rounded-lg bg-[#07090d]/70 px-2 text-sm text-muted sm:text-base">
-            Hold tokenized stocks on BNB Chain as collateral, trade Lighter perps and Derive options, and let an agent hedge your book and keep margin topped up. Every hedge comes with its payoff and why that venue. Nothing moves without your OK.
+            Hold tokenized stocks on BNB Chain as collateral, trade perps and options, and let an agent hedge your book and keep margin topped up. Every hedge comes with its payoff and why that venue. Nothing moves without your OK.
           </p>
           <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
             <ConnectButton />

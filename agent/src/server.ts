@@ -5,6 +5,7 @@ import { createServer, type IncomingMessage } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import { z, ZodError } from 'zod';
 import { chat } from './chat/chat';
+import { venueWordsDeep } from '../../lib/venue-words';
 import { loadConfig, resetConfigForTests } from './config';
 import { openStore } from './tools/store';
 
@@ -55,7 +56,8 @@ export const server = createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/chat') {
       let body: unknown; try { body = JSON.parse(await readBody(req)); } catch { return send(400, { error: 'body must be JSON' }); }
       const r = Req.parse(body);
-      return send(200, await Promise.race([chat(r), new Promise<never>((_, rej) => setTimeout(() => rej(new Error('the agent took too long')), RUN_TIMEOUT_MS))]));
+      // What the user reads never names a venue (Lighter = perps, Derive = options); the agent itself keeps the names.
+      return send(200, venueWordsDeep(await Promise.race([chat(r), new Promise<never>((_, rej) => setTimeout(() => rej(new Error('the agent took too long')), RUN_TIMEOUT_MS))])));
     }
     return send(404, { error: 'not found' });
   } catch (e) {
