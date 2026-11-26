@@ -24,7 +24,7 @@ const usd = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits
 const num = (v: bigint | null | undefined) => (v ? Number(fmtUnits(v, 18, 6).replace(/,/g, '')) : 0);
 const MIN_TOPUP = 6; // smallest venue top-up (perps $6, options $7)
 
-export function FundingPanel({ value, prices, onSave }: { value: Funding; prices: Record<string, number | null>; onSave: (next: Funding) => Promise<string | null> }) {
+export function FundingPanel({ value, prices, haircutFor, onSave }: { value: Funding; prices: Record<string, number | null>; /** Per-token haircut from price integrity; omitted = the flat haircut for every token. */ haircutFor?: (symbol: string) => number; onSave: (next: Funding) => Promise<string | null> }) {
   const { address } = useAccount();
   const info = useQuery({ queryKey: ['agent-info'], queryFn: () => getJson<{ bscAddress: Address | null }>('/api/agent/info') });
   const agent = info.data?.bscAddress ?? null;
@@ -54,7 +54,7 @@ export function FundingPanel({ value, prices, onSave }: { value: Funding; prices
   const stables = Math.min(num(allowed('USDC')), usdcFree) + Math.min(num(allowed('USDT')), usdtFree);
   const stocks = value.sources.includes('sell_bstocks') ? held.filter((h) => value.sellOrder.includes(h.symbol)).reduce((s, h) => {
     const p = prices[h.symbol]; if (!p) return s;
-    return s + num((min(allowed(h.symbol), h.raw) * h.uiMultiplier) / E18) * p * (1 - value.haircut);
+    return s + num((min(allowed(h.symbol), h.raw) * h.uiMultiplier) / E18) * p * (1 - (haircutFor ? haircutFor(h.symbol) : value.haircut));
   }, 0) : 0;
   const total = stables + stocks;
   const anyAllowed = tokens.some((t) => allowed(t.id) > 0n);

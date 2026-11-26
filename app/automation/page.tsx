@@ -21,6 +21,7 @@ import { ActionCard, ActionHistory, ModeToggle } from '@/components/risk/ActionC
 import { HedgeStatus } from '@/components/risk/HedgeStatus';
 import { CheckSchedule } from '@/components/risk/CheckSchedule';
 import { PriceIntegrity } from '@/components/risk/PriceIntegrity';
+import { haircutFor } from '@/lib/integrity-view';
 import { useIntegrity } from '@/lib/hooks/useIntegrity';
 import { LatestRun } from '@/components/risk/LatestRun';
 import { LimitsPanel } from '@/components/risk/LimitsPanel';
@@ -140,6 +141,7 @@ export default function RiskPage() {
       <FundingPanel
         value={{ sources: cfg.rebalance.sources, sellOrder: cfg.rebalance.sellOrder, keepBscReserveBaseUnit: cfg.rebalance.keepBscReserveBaseUnit, haircut: cfg.collateral.bstockHaircut }}
         prices={Object.fromEntries(p.stocks.map((s) => [s.symbol, s.price]))}
+        haircutFor={(sym) => haircutFor(sym, cfg.collateral.bstockHaircut, integ)}
         onSave={(f) => {
           const next = structuredClone(cfg);
           next.rebalance.sources = f.sources; next.rebalance.sellOrder = f.sellOrder; next.rebalance.keepBscReserveBaseUnit = f.keepBscReserveBaseUnit; next.collateral.bstockHaircut = f.haircut;
