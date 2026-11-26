@@ -21,7 +21,8 @@ const GROUPS = [
     docs: [
       { slug: 'agent-build', file: 'docs/AGENT_BUILD.md', title: 'Agent build guide (step by step)' },
       { slug: 'agent', file: 'docs/AGENT.md', title: 'Agent integration guide (API)' },
-      { slug: 'lighter', file: 'docs/endpoints/lighter.md', title: 'Perps notes & gotchas' },
+      { slug: 'aster', file: 'docs/endpoints/aster.md', title: 'Perps (Aster) notes & gotchas' },
+      { slug: 'lighter', file: 'docs/endpoints/lighter.md', title: 'Lighter notes (dormant)' },
       { slug: 'derive', file: 'docs/endpoints/derive.md', title: 'Options notes & gotchas' },
       { slug: 'relay', file: 'docs/endpoints/relay.md', title: 'Relay bridge notes' },
       { slug: 'bstocks', file: 'docs/endpoints/bstocks.md', title: 'bStocks notes' },
