@@ -17,6 +17,10 @@ export interface HistoryRow {
   status: string;
   account: string | null;
   txHash: string | null;
+  /** Options only: Derive's own trade id (a reference before the on-chain hash exists) and its settlement stage. */
+  tradeId?: string | null;
+  /** 'Pending' | 'Proving' | 'Settled' | 'Reverted' ... as Derive reports it (batch_status). */
+  settlement?: string | null;
 }
 
 const LIGHTER_REASON: Record<string, string> = {
@@ -56,6 +60,16 @@ export function txUrl(venue: HistoryVenue, hash: string, network: 'mainnet' | 't
   if (venue === 'bstocks') return `https://bscscan.com/tx/${hash}`;
   if (venue === 'lighter') return network === 'mainnet' ? `https://app.lighter.xyz/explorer/logs/${hash}` : `https://testnet.app.lighter.xyz/explorer/logs/${hash}`;
   return network === 'mainnet' ? `https://explorer.derive.xyz/tx/${hash.startsWith('0x') ? hash : `0x${hash}`}` : null;
+}
+/** Plain words for Derive's settlement stage of a trade. Live 2026-11-26: fills show batch_status "Proving" with no tx_hash yet. */
+export function settlementLabel(status: string | null | undefined): string {
+  const st = (status ?? '').toLowerCase();
+  if (!st) return 'settling';
+  if (st.includes('prov')) return 'proving on-chain';
+  if (st.includes('pend') || st.includes('submit')) return 'queued to settle';
+  if (st.includes('settl')) return 'settled';
+  if (st.includes('revert') || st.includes('error') || st.includes('fail')) return 'settlement failed';
+  return st;
 }
 export const shortHash = (h: string) => (h.length > 14 ? `${h.slice(0, 8)}…${h.slice(-6)}` : h);
 

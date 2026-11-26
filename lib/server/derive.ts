@@ -323,17 +323,23 @@ export async function deriveOrderHistory(n: VenueNetwork, wallet: Address, limit
     n, 'private/get_order_history', { wallet: owner, page_size: limit }, headers);
   // Settlement hash per order: Derive records it on each trade (tx_hash, once settled on chain). A failed read leaves it empty.
   const hashOf = new Map<string, string>();
+  const refOf = new Map<string, { tradeId: string | null; settlement: string | null }>();
   const subs = [...new Set((r.orders ?? []).filter((o) => Number(o.filled_amount) > 0).map((o) => o.subaccount_id))].slice(0, 8);
   await Promise.all(subs.map(async (sub) => {
     try {
-      const t = await deriveRpc<{ trades?: { order_id?: string; tx_hash?: string | null }[] }>(n, 'private/get_trade_history', { subaccount_id: sub, page_size: 100 }, headers);
-      for (const tr of t.trades ?? []) if (tr.order_id && tr.tx_hash && !hashOf.has(tr.order_id)) hashOf.set(tr.order_id, tr.tx_hash);
+      const t = await deriveRpc<{ trades?: { order_id?: string; trade_id?: string; tx_hash?: string | null; batch_status?: string | null }[] }>(n, 'private/get_trade_history', { subaccount_id: sub, page_size: 100 }, headers);
+      for (const tr of t.trades ?? []) {
+        if (!tr.order_id) continue;
+        if (tr.tx_hash && !hashOf.has(tr.order_id)) hashOf.set(tr.order_id, tr.tx_hash);
+        if (!refOf.has(tr.order_id)) refOf.set(tr.order_id, { tradeId: tr.trade_id ?? null, settlement: tr.batch_status ?? null });
+      }
     } catch { /* no hashes this time */ }
   }));
   return (r.orders ?? []).map((o) => ({
     venue: 'derive' as const, time: o.creation_timestamp, market: o.instrument_name, side: o.direction, type: o.order_type,
     size: o.amount, filled: o.filled_amount, avgPrice: Number(o.filled_amount) > 0 ? o.average_price : null,
     status: o.cancel_reason ? `${o.order_status}:${o.cancel_reason}` : o.order_status, account: `#${o.subaccount_id}`, txHash: (o.order_id && hashOf.get(o.order_id)) || null,
+    tradeId: (o.order_id && refOf.get(o.order_id)?.tradeId) || null, settlement: (o.order_id && refOf.get(o.order_id)?.settlement) || null,
   })).sort((a, b) => b.time - a.time);
 }
 
