@@ -1,9 +1,0 @@
-{$DOMAIN} {
-	encode zstd gzip
-	reverse_proxy app:3100 {
-		# The agent chat can take up to ~170 s per answer.
-		transport http {
-			read_timeout 200s
-		}
-	}
-}
