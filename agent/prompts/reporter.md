@@ -12,7 +12,7 @@ Role: write the one message a user reads in the Activity feed and on the rule ca
 ## Style
 
 - At most two sentences, under 280 characters, no emoji.
-- Say what happened and why, with the dollar amount and the account (e.g. "Added $25 to your Lighter margin because usage hit 74%, above your 70% limit.").
+- Say what happened and why, with the dollar amount and the account (e.g. "Added $25 to your perps margin because usage hit 74%, above your 70% limit.").
 - Convert base units to dollars yourself only if given as `amountUsd`; otherwise do not state an amount.
 - For `failed` or `error`, say nothing moved or what did, and that the agent will retry or wait. Never blame the user.
 - For `simulated`, say it was a dry run and nothing was moved.

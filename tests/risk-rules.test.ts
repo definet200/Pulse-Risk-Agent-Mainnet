@@ -3,7 +3,7 @@ import { bpsToPercent, defaultRule, describeRule, formatUsd, healthScore, meterF
 import { AgentConfig, DEFAULT_CONFIG, HedgeLeg } from '@/lib/agent-config';
 import { planFunding, planHedge } from '@/lib/plan';
 
-const util = (over: Partial<RiskRule> = {}): RiskRule => ({ ...defaultRule('lighter'), ...over });
+const util = (over: Partial<RiskRule> = {}): RiskRule => ({ ...defaultRule('aster'), ...over });
 const usdRule = (over: Partial<RiskRule> = {}): RiskRule => ({
   ...defaultRule('derive', '88346', 'PRIME'), mode: 'account_value', triggerBps: null, targetBps: null, releaseLevelBps: null,
   triggerBaseUnit: '100000000', targetBaseUnit: '200000000', ...over,

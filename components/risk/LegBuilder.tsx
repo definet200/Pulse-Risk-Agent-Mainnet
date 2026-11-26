@@ -4,20 +4,21 @@ import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { Plus, Trash2, X } from 'lucide-react';
 import { useVenueNetwork } from '@/lib/network';
-import { derivePublic, type LighterMarketDetail } from '@/lib/hooks/useVenues';
+import { derivePublic } from '@/lib/hooks/useVenues';
+import type { AsterMarket } from '@/lib/aster-view';
 import { BSTOCKS_BSC } from '@/lib/bstocks';
 import { parseDeriveOption } from '@/lib/scenario';
 import { fmtNum } from '@/lib/format';
 
-export type LegVenue = 'derive-option' | 'lighter' | 'bstock';
-export interface WhatIfLeg { id: string; venue: LegVenue; instrument: string; underlying: string; side: 'buy' | 'sell'; size: number; marketId?: number }
+export type LegVenue = 'derive-option' | 'perp' | 'bstock';
+export interface WhatIfLeg { id: string; venue: LegVenue; instrument: string; underlying: string; side: 'buy' | 'sell'; size: number }
 
 const VENUES: { id: LegVenue; label: string; sub: string }[] = [
   { id: 'derive-option', label: 'Options', sub: 'Options' },
-  { id: 'lighter', label: 'Perps', sub: 'Perps' },
+  { id: 'perp', label: 'Perps', sub: 'Perps' },
   { id: 'bstock', label: 'bStocks', sub: 'spot · BNB' },
 ];
-export const VENUE_NAME: Record<LegVenue, string> = { 'derive-option': 'Option', lighter: 'Perp', bstock: 'bStock (BNB)' };
+export const VENUE_NAME: Record<LegVenue, string> = { 'derive-option': 'Option', perp: 'Perp', bstock: 'bStock (BNB)' };
 
 interface Slim { M: string; I: string; option_pricing?: { i: string; d: string; m: string } | null }
 const day = (ms: number) => new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit', timeZone: 'UTC' });
@@ -27,9 +28,9 @@ const day = (ms: number) => new Date(ms).toLocaleDateString('en-GB', { day: 'num
  * (options: underlying → expiry → strike → call/put), a side and a size; legs can be removed one by one.
  * Legs are hypothetical (nothing is traded); they price off the same live data as real positions.
  */
-export function LegBuilder({ legs, onChange, lighterMarkets, priceOf }: {
+export function LegBuilder({ legs, onChange, perpMarkets, priceOf }: {
   legs: WhatIfLeg[]; onChange: (legs: WhatIfLeg[]) => void;
-  lighterMarkets: LighterMarketDetail[] | undefined; priceOf: (l: WhatIfLeg) => number | null;
+  perpMarkets: AsterMarket[] | undefined; priceOf: (l: WhatIfLeg) => number | null;
 }) {
   const { network } = useVenueNetwork();
   const [venue, setVenue] = useState<LegVenue>('derive-option');
@@ -38,7 +39,7 @@ export function LegBuilder({ legs, onChange, lighterMarkets, priceOf }: {
   // Derive option pickers
   const [ou, setOu] = useState('ETH'); const [exp, setExp] = useState<number | null>(null); const [strike, setStrike] = useState<number | null>(null); const [cp, setCp] = useState<'C' | 'P'>('C');
   // Other pickers
-  const [lm, setLm] = useState<number | null>(null); const [stock, setStock] = useState('NVDAB');
+  const [lm, setLm] = useState<string | null>(null); const [stock, setStock] = useState('NVDAB');
 
   const live = useQuery({ queryKey: ['dlive', network], staleTime: 60_000, queryFn: () => derivePublic<string[]>(network, 'public/get_all_live_instruments', {}) });
   const opts = useMemo(() => (live.data ?? []).map((n) => ({ n, o: parseDeriveOption(n) })).filter((x): x is { n: string; o: NonNullable<ReturnType<typeof parseDeriveOption>> } => !!x.o), [live.data]);
@@ -56,12 +57,12 @@ export function LegBuilder({ legs, onChange, lighterMarkets, priceOf }: {
   const optName = e !== null && k !== null ? opts.find((x) => x.o.underlying === ou && x.o.expiryMs === e && x.o.strike === k && x.o.type === cp)?.n ?? null : null;
   const optT = useQuery({ queryKey: ['dticker', network, optName], enabled: !!optName && venue === 'derive-option', refetchInterval: 15_000, queryFn: () => derivePublic<Slim>(network, 'public/get_ticker', { instrument_name: optName }) });
 
-  const lmk = lighterMarkets?.find((m) => m.market_id === lm) ?? lighterMarkets?.find((m) => m.symbol === 'ETH') ?? lighterMarkets?.[0];
+  const lmk = perpMarkets?.find((m) => m.ticker === lm) ?? perpMarkets?.find((m) => m.ticker === 'ETH') ?? perpMarkets?.[0];
   const st = BSTOCKS_BSC.find((b) => b.symbol === stock) ?? BSTOCKS_BSC[0];
 
   const draft: Omit<WhatIfLeg, 'id' | 'side' | 'size'> | null =
     venue === 'derive-option' ? (optName ? { venue, instrument: optName, underlying: ou } : null)
-      : venue === 'lighter' ? (lmk ? { venue, instrument: `${lmk.symbol}-PERP`, underlying: lmk.symbol, marketId: lmk.market_id } : null)
+      : venue === 'perp' ? (lmk ? { venue, instrument: `${lmk.ticker}-PERP`, underlying: lmk.ticker } : null)
           : { venue, instrument: st.symbol, underlying: st.underlying };
   const n = Number(size);
   const add = () => { if (draft && n > 0) onChange([...legs, { ...draft, id: `${Date.now()}-${legs.length}`, side, size: n }]); };
@@ -88,9 +89,9 @@ export function LegBuilder({ legs, onChange, lighterMarkets, priceOf }: {
           <Field label={`Strike${index ? ` · index ${fmtNum(index, index < 10 ? 4 : 2)}` : ''}`}><select className={sel} value={k ?? ''} onChange={(ev) => setStrike(Number(ev.target.value))}>{strikes.map((x) => <option key={x} value={x}>{fmtNum(x, x < 10 ? 2 : 0)}{x === atm ? '  · ATM' : ''}</option>)}</select></Field>
           <Field label="Type"><Seg value={cp} onChange={setCp} options={[['C', 'Call'], ['P', 'Put']]} /></Field>
         </>)}
-        {venue === 'lighter' && (
-          <div className="lg:col-span-4"><Field label="Market">{lighterMarkets?.length
-            ? <select className={sel} value={lmk?.market_id ?? ''} onChange={(ev) => setLm(Number(ev.target.value))}>{lighterMarkets.map((m) => <option key={m.market_id} value={m.market_id}>{m.symbol}-PERP · {fmtNum(Number(m.mark_price) || m.last_trade_price, 2)}</option>)}</select>
+        {venue === 'perp' && (
+          <div className="lg:col-span-4"><Field label="Market">{perpMarkets?.length
+            ? <select className={sel} value={lmk?.ticker ?? ''} onChange={(ev) => setLm(ev.target.value)}>{perpMarkets.map((m) => <option key={m.symbol} value={m.ticker}>{m.ticker}-PERP · {fmtNum(m.mark ?? m.last, 2)}</option>)}</select>
             : <div className="flex h-9 items-center rounded-lg border border-line bg-panel2 px-3 text-sm text-muted">Perps markets unavailable on this network right now</div>}</Field></div>
         )}
         {venue === 'bstock' && (

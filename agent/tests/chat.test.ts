@@ -1,3 +1,4 @@
+import { clearAsterMarketCache } from '../src/tools/aster';
 import { clearOptionNames } from '../src/risk/options';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AIMessage, ToolMessage, type BaseMessage } from '@langchain/core/messages';
@@ -233,21 +234,23 @@ describe('hedge card data and venue tickers', () => {
     expect(r.scenarios[0].live).toBe(true); if (r.scenarios[0].plan) expect(r.ui.showPending).toBe(true);
   }, 90_000);
 
-  it('get_venue_tickers reads Lighter and Derive live and reports exactly what is listed', async () => {
+  it('get_venue_tickers reads perps and Derive live and reports exactly what is listed', async () => {
     const real = globalThis.fetch;
     globalThis.fetch = (async (u: string | URL | Request, init?: RequestInit) => {
       const url = String(u);
-      if (url.includes('orderBooks')) return new Response(JSON.stringify({ code: 200, order_books: [{ symbol: 'NVDA', market_type: 'perp' }, { symbol: 'ETH', market_type: 'perp' }] }));
+      const f = (filterType: string, o: Record<string, string>) => ({ filterType, ...o });
+      const sym = (symbol: string) => ({ symbol, status: 'TRADING', baseAsset: symbol.replace('USDT', ''), quoteAsset: 'USDT', pricePrecision: 2, quantityPrecision: 3, filters: [f('PRICE_FILTER', { tickSize: '0.01' }), f('LOT_SIZE', { stepSize: '0.001', minQty: '0.001' }), f('MIN_NOTIONAL', { notional: '5' })] });
+      if (url.includes('/fapi/v1/exchangeInfo')) return new Response(JSON.stringify({ symbols: [sym('NVDAUSDT'), sym('ETHUSDT')] }));
       // Derive v3: the live list is get_all_live_instruments (there is no public/get_instruments). Live 2026-11-25 NVDA has options.
       if (url.includes('get_all_live_instruments')) return new Response(JSON.stringify({ result: ['ETH-20261204-1600-P', 'ETH-20261204-1600-C', 'NVDA-20261204-150-P', 'NVDA-20261211-150-P', 'NVDA-20261204-150-C', 'BNB-PERP'] }));
       return real(u, init);
     }) as typeof fetch;
     try {
-      clearOptionNames();
-      const m = script([() => ai('', [{ name: 'get_venue_tickers', args: { tickers: ['NVDA', 'ETH', 'MSTR'] } }]), (msgs) => ai(`Checked.\nSOURCES: ${idOf(msgs, 'Lighter NVDA')}, ${idOf(msgs, 'Derive ETH')}`)]);
-      const r = await chat(req('Which tickers can I hedge on Lighter and Derive? NVDA, ETH'));
+      clearOptionNames(); clearAsterMarketCache();
+      const m = script([() => ai('', [{ name: 'get_venue_tickers', args: { tickers: ['NVDA', 'ETH', 'MSTR'] } }]), (msgs) => ai(`Checked.\nSOURCES: ${idOf(msgs, 'Perps NVDA')}, ${idOf(msgs, 'Derive ETH')}`)]);
+      const r = await chat(req('Which tickers can I hedge on perps and options? NVDA, ETH'));
       const facts = toolFacts(m.seen[1]);
-      expect(facts.find((f) => f.label === 'Lighter NVDA')!.value).toMatch(/listed: NVDA/); expect(facts.find((f) => f.label === 'Derive ETH')!.value).toMatch(/2 live \(1 puts\)/);
+      expect(facts.find((f) => f.label === 'Perps NVDA')!.value).toMatch(/listed: NVDAUSDT \(minimum order \$5/); expect(facts.find((f) => f.label === 'Perps MSTR')!.value).toMatch(/no market/); expect(facts.find((f) => f.label === 'Derive ETH')!.value).toMatch(/2 live \(1 puts\)/);
       expect(facts.find((f) => f.label === 'Derive NVDA')!.value).toMatch(/options listed: 3 live \(2 puts\), expiries 2026-12-04, 2026-12-11/);
       expect(facts.find((f) => f.label === 'Derive MSTR')!.value).toMatch(/no live options/);
       expect(r.steps.some((s) => s.tool === 'get_venue_tickers')).toBe(true);

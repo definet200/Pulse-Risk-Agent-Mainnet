@@ -61,7 +61,7 @@ async function tick() {
   if (!proposed) {
     proposed = true;
     try {
-      const p = await buildProposal(wallet, c.AGENT_NETWORK, { venue: 'lighter', accountRef: '', equityUsd: 4000, usedUsd: 1400, positions: [{ symbol: 'ETH', valueUsd: 30_000 }] },
+      const p = await buildProposal(wallet, c.AGENT_NETWORK, { venue: 'aster', accountRef: '', equityUsd: 4000, usedUsd: 1400, positions: [{ symbol: 'ETH', valueUsd: 30_000 }] },
         { vol1h: 0.041, latencySec: 18, leverage: 21, utilNow: 0.35, equityUsd: 4000, usedUsd: 1400, bnbStablesUsd: 400, bstocksAfterHaircutUsd: 7_000 });
       const r = await app.postProposal(p); log.info(r.duplicate ? 'rule proposal already submitted' : `rule proposal #${r.id} submitted for approval`);
     } catch (e) { log.warn(`proposal failed: ${e instanceof Error ? e.message : String(e)}`); }

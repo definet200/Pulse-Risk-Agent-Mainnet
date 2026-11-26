@@ -33,7 +33,7 @@ export interface NewsView {
 /** Stocks worth reading news for: everything held that has a hedge leg, plus any open hedge. */
 export function relevantLegs(s: Snapshot) {
   const held = Object.fromEntries(s.bsc.bstocks.map((b) => [b.symbol, b.qty]));
-  return s.config.hedge.legs.filter((l) => (held[l.bstock] ?? 0) > 0 || (s.lighterPositions[l.marketId ?? -1] ?? 0) !== 0);
+  return s.config.hedge.legs.filter((l) => (held[l.bstock] ?? 0) > 0 || (l.venue === 'aster' && (s.perpPositions[l.market] ?? 0) !== 0));
 }
 
 /** Read the news and score it. Never throws: any failure yields no flag. */

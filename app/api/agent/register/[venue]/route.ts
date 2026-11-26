@@ -3,6 +3,7 @@ import { json } from '@/lib/server/auth';
 import { netParam, withWallet } from '@/lib/server/http';
 import { finalizeLighterKey, prepareLighterKey } from '@/lib/server/lighter';
 import { finalizeDeriveKey, prepareDeriveKey } from '@/lib/server/derive';
+import { confirmAsterKey, prepareAsterKey } from '@/lib/server/aster';
 
 export const runtime = 'nodejs';
 
@@ -13,6 +14,14 @@ export async function POST(req: Request, ctx: { params: Promise<{ venue: string 
     const b = (await req.json().catch(() => ({}))) as { network?: string; step?: string; signature?: string; setKey?: string; whitelist?: string; login?: string };
     const n = netParam(b.network);
     if (!n) return json({ error: 'network must be mainnet|testnet' }, 400);
+    if (venue === 'aster') {
+      // prepare → { typedData, msg } for MetaMask signTypedData (BNB Chain); finalize → submit the approval to the venue.
+      if (b.step === 'prepare') return json(await prepareAsterKey(n, wallet));
+      if (b.step === 'finalize') {
+        if (!b.signature || !isHex(b.signature)) return json({ error: 'signature required' }, 400);
+        return json(await confirmAsterKey(n, wallet, b.signature));
+      }
+    }
     if (venue === 'lighter') {
       if (b.step === 'prepare') return json(await prepareLighterKey(n, wallet));
       if (b.step === 'finalize') {

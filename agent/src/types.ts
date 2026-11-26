@@ -25,16 +25,16 @@ export interface Snapshot {
   ruleState: Record<string, RuleState>;
   /** keyed by ruleKey */
   health: Record<string, AccountHealth>;
-  /** Lighter signed position size by marketId (negative = short). */
-  lighterPositions: Record<number, number>;
+  /** Perps (Aster) signed position size by ticker, e.g. { NVDA: -0.5 } (negative = short). */
+  perpPositions: Record<string, number>;
   bsc: BscFunds;
   /** Anything non-empty means: fail closed. */
   dataQuality: string[];
   /** Moves the agent already made in the last 24 h, by ruleKey (USDC base units). */
   moved24hBase: Record<string, string>;
-  /** Volatility per underlying ticker, read from Lighter candles. Only present when hedging is on. */
+  /** Volatility per underlying ticker, read from the perps venue's hourly klines. Only present when hedging is on. */
   market?: MarketData;
-  /** Why hedging cannot be planned this tick (missing volatility, no Lighter account). Never blocks margin top-ups. */
+  /** Why hedging cannot be planned this tick (missing volatility, no perps account). Never blocks margin top-ups. */
   hedgeProblems?: string[];
   /** Calendar vs news disagreements per ticker (set by the news step). A hedge for that ticker is never run autonomously. */
   eventConflicts?: Record<string, string>;
@@ -48,12 +48,12 @@ export interface Snapshot {
   heldPuts?: { ticker: string; notionalUsd: number; expiry: string }[];
   /** Free collateral on the Derive subaccount that would pay a put premium. */
   deriveFree?: { ref: string; freeUsd: number };
-  /** EVERY venue account the wallet owns (all Lighter sub-accounts, all Derive subaccounts), read each check. */
+  /** EVERY venue account the wallet owns (the Aster perps account, all Derive subaccounts), read each check. */
   venueAccounts?: VenueAccount[];
   /** Why a venue could not be used this tick (missing key, outage). Rules on that venue are skipped; other venues still run. */
-  venueProblems?: Partial<Record<'lighter' | 'derive', string>>;
-  /** Venue order minimums per Lighter market id: minimum size, size step, minimum notional. Orders below are never sent. */
-  marketMins?: Record<number, { minBase: number; sizeDecimals: number; minNotionalUsd: number }>;
+  venueProblems?: Partial<Record<'aster' | 'derive', string>>;
+  /** Perps order minimums per ticker: minimum size, size step, minimum notional ($5 on Aster). Orders below are never sent. */
+  marketMins?: Record<string, { minBase: number; step: number; minNotionalUsd: number }>;
   /** Value-based hedge inputs per leg (key = hedgeKey): the HEDGE price, signed positions, and venue minimums. */
   hedgePrices?: Record<string, number>;
   hedgePositions?: Record<string, number>;
@@ -64,10 +64,10 @@ export interface Snapshot {
   putPositions?: { key: string; instrument: string; amount: number; expiry: string; strike: number; daysToExpiry: number }[];
   /** Seconds a margin move BNB -> Derive takes. */
   deriveEtaSec?: number;
-  /** Seconds a margin move BNB -> Lighter takes (measured median, else the default). */
-  bridgeEtaSec?: number;
-  /** The Lighter main account that carries the hedges. */
-  lighterMain?: { equityUsd: number; freeUsd: number };
+  /** Seconds a margin move BNB -> perps takes (BNB Chain deposit, no bridge; measured median, else the default). */
+  perpEtaSec?: number;
+  /** The perps (Aster) account that carries the hedges. */
+  perpMain?: { equityUsd: number; freeUsd: number };
   /** Running totals the policy engine checks (today's notional, today's loss, capital parked off BNB). */
   today?: TodayStats;
 }
@@ -78,13 +78,13 @@ export interface TodayStats {
   notionalUsd: number;
   /** Loss since the first reading of the UTC day, USD (0 when up). */
   lossUsd: number;
-  /** Equity parked on Lighter and Derive, USD. */
+  /** Equity parked on the perps and options venues, USD. */
   capitalOffBnbUsd: number;
   /** Set when the anomaly stop has paused the agent. */
   pausedReason: string | null;
 }
 
-export interface VenueAccount { venue: 'lighter' | 'derive'; id: number; label: string; equityUsd: number; freeUsd: number; main: boolean }
+export interface VenueAccount { venue: 'aster' | 'derive'; id: number; label: string; equityUsd: number; freeUsd: number; main: boolean }
 
 export type CandidateKind = 'top_up' | 'release' | 'hedge';
 
@@ -104,7 +104,7 @@ export interface Candidate {
   id: string;
   kind: CandidateKind;
   ruleKey?: string;
-  venue: 'lighter' | 'derive';
+  venue: 'aster' | 'derive';
   /** USDC base units (6 dp), integer string. For hedge: '0' (size lives in hedge.*). */
   amountBaseUnit: string;
   reason: string;
@@ -114,7 +114,7 @@ export interface Candidate {
   funding?: { source: string; amountUsd: number }[];
   /** Expected utilization after the move, computed by code (so no LLM has to do the arithmetic). */
   after?: { utilBps: number | null; accountUsd: number | null };
-  hedge?: { bstock: string; market: string; marketId: number; deltaToShort: number; driftPct: number; ticker?: string; targetUsd?: number; currentUsd?: number; instrument?: 'perp' | 'put'; key?: string; venue?: 'lighter' | 'derive'; kind?: 'perp' | 'put'; hedgePrice?: number; proxyFor?: string; removesNetShort?: boolean; orderQtys?: number[]; derive?: { instrument: string; roll?: { sell: { instrument: string; amount: number }[] } }; option?: { expiry: string; strike: number; contracts: number; ask: number; premiumUsd: number; feesUsd: number; notionalUsd: number } };
+  hedge?: { bstock: string; market: string; /** Dormant Lighter market id; Aster legs are keyed by ticker (`key`). */ marketId?: number; deltaToShort: number; driftPct: number; ticker?: string; targetUsd?: number; currentUsd?: number; instrument?: 'perp' | 'put'; key?: string; venue?: 'aster' | 'derive'; kind?: 'perp' | 'put'; hedgePrice?: number; proxyFor?: string; removesNetShort?: boolean; orderQtys?: number[]; derive?: { instrument: string; roll?: { sell: { instrument: string; amount: number }[] } }; option?: { expiry: string; strike: number; contracts: number; ask: number; premiumUsd: number; feesUsd: number; notionalUsd: number } ; /** Chat trades only: leverage to set on the market before the order. */ leverage?: number; /** Chat trades only: a close (reduce-only); otherwise a buy opens a long. */ reduceOnly?: boolean };
   /** What limited the size of this order, computed by code. */
   binding?: string[];
   /** Hard checks computed by code; see CandidateFacts. */

@@ -14,7 +14,7 @@ if (!wallet || !/^0x[0-9a-fA-F]{40}$/.test(wallet)) { console.error('Usage: npm 
 openStore(':memory:');
 const c = config();
 const p = await buildProposal(wallet, c.AGENT_NETWORK,
-  { venue: 'lighter', accountRef: '', equityUsd: 10_000, usedUsd: 5_500, positions: [{ symbol: 'ETH', valueUsd: 66_000 }] },
+  { venue: 'aster', accountRef: '', equityUsd: 10_000, usedUsd: 5_500, positions: [{ symbol: 'ETH', valueUsd: 66_000 }] },
   { vol1h: 0.041, latencySec: 18, leverage: 12, utilNow: 0.55, equityUsd: 10_000, usedUsd: 5_500, bnbStablesUsd: 0, bstocksAfterHaircutUsd: 7_000 });
 console.log(JSON.stringify(p, null, 2));
 const r = await postProposal(p);

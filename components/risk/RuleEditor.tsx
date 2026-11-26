@@ -4,8 +4,9 @@ import clsx from 'clsx';
 import { ChevronDown, X } from 'lucide-react';
 import {
   baseUnitsToText, bpsText, defaultRule, describeRule, effectiveCooldownSec, formatUsd, meterFor, minutes, MIN_DEPOSIT_BASE_UNIT, percentToBps,
-  RELEASE_ARRIVAL, ruleKey, ruleProblem, ruleTitle, usdToBaseUnits, VENUE_LABEL, type RiskRule, type RuleMode,
+  RELEASE_ARRIVAL, ruleKey, ruleProblem, ruleTitle, usdToBaseUnits, type RiskRule, type RuleMode,
 } from '@/lib/risk-rules';
+import { venueWords } from '@/lib/venue-words';
 import type { RiskAccount } from '@/lib/hooks/useRiskAccounts';
 import { Switch, ZoneBar } from './ZoneBar';
 
@@ -169,12 +170,12 @@ export function RuleEditor({ initial, editing, accounts, rules, onSave, onCancel
           return (
             <div className="space-y-2">
               <div role="tablist" aria-label="Venue" className="grid grid-cols-2 gap-1 rounded-lg bg-bg p-0.5 ring-1 ring-inset ring-line">
-                {(['lighter', 'derive'] as const).map((v) => {
+                {(['aster', 'derive'] as const).map((v) => {
                   const on = d.venue === v; const has = rules.some((r) => r.venue === v); const any = accounts.some((a) => a.venue === v);
                   return (
                     <button key={v} role="tab" aria-selected={on} disabled={!any} onClick={() => pick(accounts.find((a) => a.venue === v))}
                       className={clsx('h-8 rounded-md text-xs font-medium disabled:opacity-40', on ? 'bg-accent/10 text-accent ring-1 ring-inset ring-accent/25' : 'text-muted hover:text-white')}>
-                      {VENUE_LABEL[v]} {v === 'lighter' ? 'perps' : 'options'}{has && <span className="ml-1.5 inline-block h-1 w-1 rounded-full bg-current align-middle opacity-70" />}
+                      {v === 'aster' ? 'Perps' : 'Options'}{has && <span className="ml-1.5 inline-block h-1 w-1 rounded-full bg-current align-middle opacity-70" />}
                     </button>
                   );
                 })}
@@ -183,8 +184,8 @@ export function RuleEditor({ initial, editing, accounts, rules, onSave, onCancel
                 {inVenue.map((a) => <option key={a.key} value={a.key}>{a.label ?? a.title}{rules.some((r) => ruleKey(r) === a.key) ? ' · has a rule' : ''}</option>)}
               </select>
               <p className="text-[10px] text-muted">
-                {d.venue === 'lighter'
-                  ? (d.accountRef ? `Sub-account: top-ups land on perps main, then move main → Sub #${d.accountRef} (instant).` : 'Main account. Create sub-accounts under Perps → Sub-accounts.')
+                {d.venue === 'aster'
+                  ? 'Your perps account (USDT margin on BNB Chain). Top-ups are deposited straight from your BNB wallet.'
                   : 'One options subaccount per risk universe (PRIME, MIDCAP, ALT, RWA). Enable more under Options → Risk universes.'}
               </p>
             </div>
@@ -205,7 +206,7 @@ export function RuleEditor({ initial, editing, accounts, rules, onSave, onCancel
 
         <div className="rounded-xl bg-bg/60 px-3 pb-1.5 pt-2.5 ring-1 ring-inset ring-line">
           <div className="mb-2 flex items-baseline gap-2">
-            <p className="truncate text-[11px] text-muted">{acct?.title ?? ruleTitle(d)} now</p>
+            <p className="truncate text-[11px] text-muted">{acct?.title ?? venueWords(ruleTitle(d))} now</p>
             <p className="ml-auto text-sm font-semibold num">{meter.display}</p>
           </div>
           <ZoneBar meter={meter} labels={!!rule} />
@@ -222,7 +223,7 @@ export function RuleEditor({ initial, editing, accounts, rules, onSave, onCancel
               hint={d.releaseOn && !d.releaseTarget.trim() ? `Blank = the top-up target (${lvl(d.target)})` : undefined} error={d.releaseOn ? shown.releaseTarget : undefined} />
           </div>
           <RunMode label="Release runs" once={d.releaseOnce} onChange={set('releaseOnce')} disabled={!d.releaseOn} />
-          <p className="text-[10px] text-muted">{d.releaseOn ? `Goes back to your BNB wallet: ${RELEASE_ARRIVAL[d.venue]}.` : 'Off — surplus stays on the venue.'}</p>
+          <p className="text-[10px] text-muted">{d.releaseOn ? `Goes back to your BNB wallet: ${venueWords(RELEASE_ARRIVAL[d.venue])}.` : 'Off — surplus stays on the venue.'}</p>
         </Fold>
 
         <Fold title="Limits" open={openLimits} onToggle={() => setOpenLimits((v) => !v)} invalid={!!(shown.perMove || shown.daily || shown.min || shown.cooldownMin)}
@@ -230,7 +231,7 @@ export function RuleEditor({ initial, editing, accounts, rules, onSave, onCancel
           <div className="grid grid-cols-2 gap-3">
             <Input label="Max per move" value={d.perMove} onChange={set('perMove')} prefix="$" error={shown.perMove} />
             <Input label="Cap per 24h" value={d.daily} onChange={set('daily')} prefix="$" error={shown.daily} />
-            <Input label="Minimum move" value={d.min} onChange={set('min')} prefix="$" error={shown.min} hint={`${VENUE_LABEL[d.venue]} floor ${formatUsd(MIN_DEPOSIT_BASE_UNIT[d.venue])}`} />
+            <Input label="Minimum move" value={d.min} onChange={set('min')} prefix="$" error={shown.min} hint={`${d.venue === 'aster' ? 'Perps' : 'Options'} floor ${formatUsd(MIN_DEPOSIT_BASE_UNIT[d.venue])}`} />
             <Input label="Cooldown" value={d.cooldownMin} onChange={set('cooldownMin')} suffix="min" error={shown.cooldownMin}
               hint={rule && effectiveCooldownSec(rule) > rule.cooldownSec ? `Applied: ${minutes(effectiveCooldownSec(rule))} (venue credit time)` : 'Time between moves'} />
           </div>
@@ -238,7 +239,7 @@ export function RuleEditor({ initial, editing, accounts, rules, onSave, onCancel
       </div>
 
       <div className="shrink-0 space-y-2.5 border-t border-line bg-panel px-5 py-3">
-        {rule ? <p className="rounded-lg border border-blue-400/30 bg-blue-400/10 px-3 py-2 text-xs leading-relaxed">{describeRule(rule)} Cooldown {minutes(rule.cooldownSec)}.</p>
+        {rule ? <p className="rounded-lg border border-blue-400/30 bg-blue-400/10 px-3 py-2 text-xs leading-relaxed">{venueWords(describeRule(rule))} Cooldown {minutes(rule.cooldownSec)}.</p>
           : <p className="text-xs text-muted">{touched && problem ? problem : 'Complete the rule to see what it will do.'}</p>}
         {existing && <p className="text-[11px] text-accent">Replaces the existing rule for this account.</p>}
         {err && <p className="rounded-lg bg-down/10 px-2.5 py-1.5 text-xs text-down">{err}</p>}

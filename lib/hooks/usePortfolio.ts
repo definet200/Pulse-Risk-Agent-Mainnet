@@ -3,17 +3,17 @@ import { useMemo } from 'react';
 import { useAccount } from 'wagmi';
 import { useBscBalances } from './useBscBalances';
 import { useBStockTickers } from './useBStockTickers';
-import { useDeriveAccount, useLighterAllAccounts } from './useVenues';
+import { useAsterAccount, useDeriveAccount } from './useVenues';
 import { toFloat } from '@/lib/format';
 
 export const DEFAULT_HAIRCUT = 0.3;
 
-/** One live view across BSC wallet, bStocks, Lighter and Derive. All numbers are display floats. */
+/** One live view across BSC wallet, bStocks, perps (Aster) and options (Derive). All numbers are display floats. */
 export function usePortfolio(haircut = DEFAULT_HAIRCUT) {
   const { address } = useAccount();
   const bsc = useBscBalances();
   const tickers = useBStockTickers();
-  const lighter = useLighterAllAccounts(address);
+  const aster = useAsterAccount();
   const derive = useDeriveAccount();
 
   return useMemo(() => {
@@ -28,12 +28,11 @@ export function usePortfolio(haircut = DEFAULT_HAIRCUT) {
     const stocksValue = stocks.reduce((s, x) => s + (x.value ?? 0), 0);
     const stocksCollateral = stocks.reduce((s, x) => s + (x.collateral ?? 0), 0);
 
-    // Sum the master and every sub-account.
-    const lAll = lighter.data ?? [];
-    const la = lAll.find((a) => a.account_type === 0) ?? lAll[0];
-    const lighterEquity = lAll.length ? lAll.reduce((a, x) => a + Number(x.total_asset_value || x.collateral), 0) : null;
-    const lighterAvail = lAll.length ? lAll.reduce((a, x) => a + Number(x.available_balance), 0) : null;
-    const lighterUsage = la && lighterEquity ? Math.max(0, Math.min(100, ((lighterEquity - (lighterAvail ?? 0)) / lighterEquity) * 100)) : null;
+    // Perps: one Aster futures account per wallet.
+    const av = aster.data;
+    const perpsOk = av?.state === 'ok';
+    const perpsEquity = av && av.state !== 'needs_agent' ? av.equity : null;
+    const perpsAvail = av && av.state !== 'needs_agent' ? av.available : null;
 
     // Sum every Derive subaccount (one per risk universe, plus the fallback).
     const subs = derive.data?.subaccounts ?? (derive.data?.subaccount ? [derive.data.subaccount] : []);
@@ -43,14 +42,18 @@ export function usePortfolio(haircut = DEFAULT_HAIRCUT) {
     const deriveEquity = subs.length ? dColl + subs.reduce((a, s) => a + Number(s.positions_value ?? 0), 0) : null;
     const deriveUsage = subs.length && dColl > 0 ? Math.max(0, Math.min(100, (1 - dFree / dColl) * 100)) : null;
 
-    const total = (usdc ?? 0) + (usdt ?? 0) + stocksValue + (lighterEquity ?? 0) + (deriveEquity ?? 0);
+    const total = (usdc ?? 0) + (usdt ?? 0) + stocksValue + (perpsEquity ?? 0) + (deriveEquity ?? 0);
     return {
       address, loading: bsc.isLoading, updatedAt: bsc.updatedAt,
       bsc: { usdc, usdt, bnb: bsc.bnb !== null ? toFloat(bsc.bnb, 18) : null },
       stocks, stocksValue, stocksCollateral, haircut,
-      lighter: { state: lighter.isLoading ? 'loading' : la ? 'ok' : lighter.isError ? 'unavailable' : 'no_account', error: lighter.error?.message ?? null, equity: lighterEquity, available: lighterAvail, usage: lighterUsage, positions: lAll.flatMap((x) => x.positions.filter((p) => +p.position !== 0)), index: la?.index, accounts: lAll.length },
+      perps: {
+        state: aster.isLoading && !av ? 'loading' as const : av ? av.state : aster.isError ? 'unavailable' as const : 'signed_out' as const,
+        error: aster.error?.message ?? null, equity: perpsEquity, available: perpsAvail, usage: perpsOk ? av.usedPct : null,
+        positions: av?.positions ?? [], agentExpiresAt: av?.agentExpiresAt ?? null,
+      },
       derive: { state: derive.data?.state ?? (derive.isLoading ? 'loading' : 'signed_out'), equity: deriveEquity, usage: deriveUsage, positions: subs.flatMap((s) => s.positions), subaccountId: ds?.subaccount_id },
       total,
     };
-  }, [address, bsc, tickers.data, lighter.data, lighter.isLoading, lighter.isError, lighter.error, derive.data, derive.isLoading, haircut]);
+  }, [address, bsc, tickers.data, aster.data, aster.isLoading, aster.isError, aster.error, derive.data, derive.isLoading, haircut]);
 }

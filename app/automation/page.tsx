@@ -5,7 +5,7 @@ import clsx from 'clsx';
 import { OctagonX } from 'lucide-react';
 import { useVenueNetwork } from '@/lib/network';
 import { useSession } from '@/lib/session';
-import { getJson, useLighterMarkets } from '@/lib/hooks/useVenues';
+import { getJson, useAsterMarkets } from '@/lib/hooks/useVenues';
 import { usePortfolio } from '@/lib/hooks/usePortfolio';
 import { useRiskAccounts } from '@/lib/hooks/useRiskAccounts';
 import { DEFAULT_CONFIG, type AgentConfig } from '@/lib/agent-config';
@@ -29,7 +29,7 @@ export default function RiskPage() {
   const { wallet, signIn } = useSession();
   const { network } = useVenueNetwork();
   const qc = useQueryClient();
-  const markets = useLighterMarkets();
+  const markets = useAsterMarkets();
   const loaded = useQuery({ queryKey: ['agent-config', network, wallet], enabled: !!wallet, queryFn: () => getJson<{ config: AgentConfig }>(`/api/agent/config?network=${network}`) });
   const events = useQuery({ queryKey: ['agent-events', network, wallet], enabled: !!wallet, refetchInterval: 5_000, queryFn: () => getJson<{ events: EventRow[] }>(`/api/agent/events?network=${network}`) });
   const ruleStates = useQuery({ queryKey: ['rule-states', network, wallet], enabled: !!wallet, refetchInterval: 10_000, queryFn: () => getJson<{ states: Record<string, RuleState> }>(`/api/agent/rule-state?network=${network}`) });
@@ -42,6 +42,9 @@ export default function RiskPage() {
   const risk = useRiskAccounts();
   const bscStables = (p.bsc.usdc ?? 0) + (p.bsc.usdt ?? 0);
   const k = useRiskKpis(risk.accounts, p.stocksValue, p.stocksCollateral, bscStables);
+
+  // Rules on the dormant Lighter venue are not shown (and drop out on the next save); perps rules run on Aster.
+  const rules = cfg.rebalance.rules.filter((r) => r.venue !== 'lighter') as RiskRule[];
 
   const held = Object.fromEntries(p.stocks.map((s) => [s.symbol, { qty: s.qty, price: s.price }]));
 
@@ -100,17 +103,17 @@ export default function RiskPage() {
 
       <ProposalCard />
 
-      <ScenarioForecast accounts={risk.accounts} rules={cfg.rebalance.rules} stocks={p.stocks.map((s) => ({ symbol: s.symbol, qty: s.qty, price: s.price }))} />
+      <ScenarioForecast accounts={risk.accounts} rules={rules} stocks={p.stocks.map((s) => ({ symbol: s.symbol, qty: s.qty, price: s.price }))} />
 
-      <AutoRebalance accounts={risk.accounts} rules={cfg.rebalance.rules} states={ruleStates.data?.states ?? {}} loading={risk.loading}
+      <AutoRebalance accounts={risk.accounts} rules={rules} states={ruleStates.data?.states ?? {}} loading={risk.loading}
         live={cfg.rebalance.enabled} onLive={async (v) => { await persist({ ...cfg, rebalance: { ...cfg.rebalance, enabled: v } }); }}
         units={units} onUnits={setUnits} bscUsdc={p.bsc.usdc} moves={moves} onSaveRules={saveRules}
         onRearm={async (key) => { await getJson('/api/agent/rule-state', { method: 'POST', body: JSON.stringify({ network, ruleKey: key, action: 'rearm' }) }); void qc.invalidateQueries({ queryKey: ['rule-states'] }); }} />
 
       <div className="grid gap-4 xl:grid-cols-2">
-        <ScenarioShock accounts={risk.accounts} rules={cfg.rebalance.rules} stocksValue={p.stocksValue} bscStables={bscStables} haircut={cfg.collateral.bstockHaircut} />
+        <ScenarioShock accounts={risk.accounts} rules={rules} stocksValue={p.stocksValue} bscStables={bscStables} haircut={cfg.collateral.bstockHaircut} />
 
-        <HedgePanel hedge={cfg.hedge} onChange={(h) => void saveHedge(h)} held={held} accounts={risk.accounts} lighterMarkets={markets.data} />
+        <HedgePanel hedge={cfg.hedge} onChange={(h) => void saveHedge(h)} held={held} accounts={risk.accounts} perpMarkets={markets.data} />
         <section className="panel p-5">
           <div className="flex items-start justify-between gap-3">
             <div><div className="font-semibold">News risk flags</div>

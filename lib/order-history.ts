@@ -1,6 +1,6 @@
 // One row shape for past orders on every venue, and the plain-language status for each. Pure (shared by server and UI).
 
-export type HistoryVenue = 'lighter' | 'derive' | 'bstocks';
+export type HistoryVenue = 'aster' | 'lighter' | 'derive' | 'bstocks';
 
 export interface HistoryRow {
   venue: HistoryVenue;
@@ -17,6 +17,8 @@ export interface HistoryRow {
   status: string;
   account: string | null;
   txHash: string | null;
+  /** Perps (Aster) only: the venue's order id. Aster matches off-chain, so there is no tx hash; this is the reference. */
+  orderId?: string | null;
   /** Options only: Derive's own trade id (a reference before the on-chain hash exists) and its settlement stage. */
   tradeId?: string | null;
   /** 'Pending' | 'Proving' | 'Settled' | 'Reverted' ... as Derive reports it (batch_status). */
@@ -58,6 +60,8 @@ const words = (s: string) => s.replace(/^canceled-|^cancelled-/, '').replace(/[-
  */
 export function txUrl(venue: HistoryVenue, hash: string, network: 'mainnet' | 'testnet' = 'mainnet'): string | null {
   if (venue === 'bstocks') return `https://bscscan.com/tx/${hash}`;
+  // Aster orders are matched off-chain (no hash). Its deposits are BNB Chain transactions to the vault: BscScan.
+  if (venue === 'aster') return /^0x[0-9a-fA-F]{64}$/.test(hash) && network === 'mainnet' ? `https://bscscan.com/tx/${hash}` : null;
   if (venue === 'lighter') return network === 'mainnet' ? `https://app.lighter.xyz/explorer/logs/${hash}` : `https://testnet.app.lighter.xyz/explorer/logs/${hash}`;
   return network === 'mainnet' ? `https://explorer.derive.xyz/tx/${hash.startsWith('0x') ? hash : `0x${hash}`}` : null;
 }
@@ -82,6 +86,12 @@ export function statusLabel(r: Pick<HistoryRow, 'venue' | 'status' | 'filled' | 
     if (st === 'open') return { text: part ? 'Partly filled, open' : 'Open', tone: 'muted' };
     const why = reason ? DERIVE_REASON[reason] ?? words(reason) : st;
     return { text: `${part ? 'Partly filled · ' : ''}${st === 'expired' ? 'Expired' : st === 'rejected' ? 'Rejected' : 'Canceled'}${why && why !== st ? `: ${why}` : ''}`, tone: part ? 'muted' : 'down' };
+  }
+  if (r.venue === 'aster') {
+    if (r.status === 'filled') return { text: 'Filled', tone: 'up' };
+    if (r.status === 'open') return { text: part ? 'Partly filled, open' : 'Open', tone: 'muted' };
+    const end = r.status === 'expired' ? 'Expired' : r.status === 'rejected' ? 'Rejected' : r.status === 'canceled' ? 'Canceled' : words(r.status);
+    return { text: `${part ? 'Partly filled · ' : ''}${end}`, tone: part ? 'muted' : 'down' };
   }
   if (r.status === 'filled') return { text: 'Filled', tone: 'up' };
   if (r.status.startsWith('canceled')) {

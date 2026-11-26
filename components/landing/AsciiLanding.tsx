@@ -136,7 +136,7 @@ export function AsciiLanding({ tickers }: { tickers: Ticker[] }) {
       <section className="relative overflow-hidden rounded-2xl border border-line bg-[#07090d] px-4 pb-10 pt-12 sm:px-8 sm:pt-16">
         <PulseField heat={heat} />
         <div className="relative text-center">
-          <div className="mb-5 font-mono text-[10px] uppercase tracking-[0.35em] text-muted sm:text-xs">bnb chain · lighter · derive · one agent</div>
+          <div className="mb-5 font-mono text-[10px] uppercase tracking-[0.35em] text-muted sm:text-xs">bnb chain · perps · options · one agent</div>
           <pre aria-label="Pulse Risk" style={{ fontFamily: 'Menlo, "SF Mono", Consolas, "DejaVu Sans Mono", monospace' }} className="mx-auto inline-block text-left text-[5px] leading-[6px] text-accent drop-shadow-[0_0_12px_rgba(240,185,11,0.35)] min-[420px]:text-[7px] min-[420px]:leading-[8px] sm:text-[11px] sm:leading-[12px] lg:text-[13px] lg:leading-[14px]">
             {pulse.map((r, i) => <div key={`p${i}`}>{r}{'  '}{risk[i]}</div>)}
           </pre>

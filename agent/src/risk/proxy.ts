@@ -1,19 +1,20 @@
 import type { Network } from '../types';
 import { fetchHourlyCloses } from '../tools/metrics';
 
-// Proxy hedges: a holding is also hedgeable through a related Lighter market (MSTR through BTC, SPY through US500,
-// a tech stock through US100). The hedge strength is MEASURED, never assumed: the correlation of hourly returns
-// over the last 7 days between the holding's own Lighter market and the proxy. The planner sizes a proxy short as
-// correlation x (holding volatility / proxy volatility) and reports the share of risk a proxy leaves (sqrt(1 - rho^2)).
+// Proxy hedges: a holding is also hedgeable through a related perps market (MSTR through BTC, a tech stock through
+// QQQ, anything else through SPY). The hedge strength is MEASURED, never assumed: the correlation of hourly returns
+// over the last 7 days between the holding's own perps market and the proxy (public Aster klines). The planner sizes
+// a proxy short as correlation x (holding volatility / proxy volatility) and reports the share of risk a proxy leaves
+// (sqrt(1 - rho^2)). SPY and QQQ have their own perps on Aster, so they are hedged directly.
 
-/** Candidate proxies per underlying, best first. Any ticker not listed is tried against US500 then US100. */
+/** Candidate proxies per underlying, best first. Any ticker not listed is tried against SPY then QQQ. */
 export const PROXY_CANDIDATES: Record<string, string[]> = {
-  MSTR: ['BTC'], COIN: ['BTC'], HOOD: ['BTC', 'US100'], CRCL: ['BTC', 'US100'],
-  SPY: ['US500'], QQQ: ['US100'],
-  NVDA: ['US100'], AAPL: ['US100'], GOOGL: ['US100'], META: ['US100'], AMZN: ['US100'], TSLA: ['US100'], NFLX: ['US100'],
-  MU: ['US100'], AMD: ['US100'], INTC: ['US100'], TSM: ['US100'], SKHY: ['US100'], SNDK: ['US100'], ORCL: ['US100'], SOXL: ['US100'], DRAM: ['US100'],
+  MSTR: ['BTC'], COIN: ['BTC'], HOOD: ['BTC', 'QQQ'], CRCL: ['BTC', 'QQQ'],
+  SPY: ['QQQ'], QQQ: ['SPY'],
+  NVDA: ['QQQ'], AAPL: ['QQQ'], GOOGL: ['QQQ'], META: ['QQQ'], AMZN: ['QQQ'], TSLA: ['QQQ'], NFLX: ['QQQ'],
+  MU: ['QQQ'], AMD: ['QQQ'], INTC: ['QQQ'], TSM: ['QQQ'], SKHY: ['QQQ'], SNDK: ['QQQ'], ORCL: ['QQQ'], SOXL: ['QQQ'], DRAM: ['QQQ'],
 };
-const FALLBACK = ['US500', 'US100'];
+const FALLBACK = ['SPY', 'QQQ'];
 /** Below this correlation a proxy removes too little risk to be worth the fees and margin. */
 export const MIN_PROXY_CORRELATION = 0.3;
 /** Never trust a measured correlation above this: 7 days of hourly data overstates how tight a relation stays. */
@@ -36,30 +37,30 @@ export function returnCorrelation(a: number[], b: number[]): number | null {
   return Number.isFinite(r) ? r : null;
 }
 
-export interface ProxyPick { via: string; viaMarketId: number; beta: number; price: number }
-export type ClosesFn = (n: Network, marketId: number) => Promise<number[]>;
+export interface ProxyPick { via: string; beta: number; price: number }
+export type ClosesFn = (n: Network, ticker: string) => Promise<number[]>;
 
 const cache = new Map<string, { at: number; pick: ProxyPick | null }>();
 const TTL_MS = 10 * 60_000;
 export const clearProxyCache = () => cache.clear();
 
 /**
- * The best measured proxy for `ticker` among its candidates that Lighter lists. `marketIds` maps symbol → Lighter
- * market id. Returns null when the holding has no Lighter market to measure against, or no candidate correlates
- * at least MIN_PROXY_CORRELATION.
+ * The best measured proxy for `ticker` among its candidates that the perps venue lists (`listed` = its tickers).
+ * Returns null when the holding has no perps market to measure against, or no candidate correlates at least
+ * MIN_PROXY_CORRELATION.
  */
-export async function pickProxy(n: Network, ticker: string, marketIds: Record<string, number>, closes: ClosesFn = fetchHourlyCloses, now = Date.now()): Promise<ProxyPick | null> {
-  const own = marketIds[ticker]; if (own === undefined) return null;
+export async function pickProxy(n: Network, ticker: string, listed: string[], closes: ClosesFn = fetchHourlyCloses, now = Date.now()): Promise<ProxyPick | null> {
+  const have = new Set(listed); if (!have.has(ticker)) return null;
   const k = `${n}:${ticker}`; const hit = cache.get(k); if (hit && now - hit.at < TTL_MS) return hit.pick;
-  const ownCloses = await closes(n, own);
+  const ownCloses = await closes(n, ticker);
   let best: ProxyPick | null = null;
   for (const via of candidatesFor(ticker)) {
-    const id = marketIds[via]; if (id === undefined) continue;
-    const vc = await closes(n, id).catch(() => [] as number[]);
+    if (!have.has(via)) continue;
+    const vc = await closes(n, via).catch(() => [] as number[]);
     const rho = returnCorrelation(ownCloses, vc);
     if (rho === null || rho < MIN_PROXY_CORRELATION) continue;
     const beta = Math.round(Math.min(rho, MAX_PROXY_CORRELATION) * 100) / 100;
-    if (!best || beta > best.beta) best = { via, viaMarketId: id, beta, price: vc[vc.length - 1] };
+    if (!best || beta > best.beta) best = { via, beta, price: vc[vc.length - 1] };
   }
   cache.set(k, { at: now, pick: best });
   return best;

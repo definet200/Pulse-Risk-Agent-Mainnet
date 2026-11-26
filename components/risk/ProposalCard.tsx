@@ -51,7 +51,7 @@ export function ProposalCard() {
             <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2 font-semibold"><Sparkles size={17} className="text-accent" />AI risk proposal
                 <span className="rounded-md bg-accent/15 px-2 py-0.5 text-[11px] font-medium text-accent">needs your approval</span></div>
-              <div className="text-xs text-muted">{p.venue === 'lighter' ? 'Perps' : 'Options'} {p.accountRef ? `#${p.accountRef}` : 'main account'}</div>
+              <div className="text-xs text-muted">{p.venue === 'derive' ? 'Options' : 'Perps'} {p.accountRef ? `#${p.accountRef}` : 'main account'}</div>
             </div>
 
             <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">

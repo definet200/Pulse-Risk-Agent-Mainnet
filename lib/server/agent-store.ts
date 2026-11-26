@@ -38,7 +38,7 @@ export function listEvents(wallet: string, n: VenueNetwork, limit = 100) {
 }
 
 // -- Risk-analyst proposals ----------------------------------------------------
-interface ProposalDb { id: number; network: string; venue: 'lighter' | 'derive'; account_ref: string; payload: string; status: ProposalRow['status']; created_at: number; decided_at: number | null }
+interface ProposalDb { id: number; network: string; venue: 'aster' | 'lighter' | 'derive'; account_ref: string; payload: string; status: ProposalRow['status']; created_at: number; decided_at: number | null }
 const toRow = (r: ProposalDb): ProposalRow => {
   const p = JSON.parse(r.payload) as Pick<ProposalIn, 'structural_risk' | 'proposed_rule' | 'reasoning' | 'metrics'>;
   return { id: r.id, network: r.network, venue: r.venue, accountRef: r.account_ref, status: r.status, structural_risk: p.structural_risk, proposed_rule: p.proposed_rule,

@@ -34,7 +34,7 @@ describe('checkPerpOrder', () => {
 describe('describeOutcome', () => {
   it('explains the margin cancel in plain words', () => {
     const r = describeOutcome({ state: 'canceled', status: 'canceled-margin-not-allowed', size: '100', filled: '0', avgPrice: null }, 'BTC');
-    expect(r).toEqual({ ok: false, text: 'Not filled. Lighter canceled the order: not enough margin.' });
+    expect(r).toEqual({ ok: false, text: 'Not filled. The venue canceled the order: not enough margin.' });
   });
   it('reports fills and partial fills with the average price', () => {
     expect(describeOutcome({ state: 'filled', status: 'filled', size: '0.1', filled: '0.1', avgPrice: '59500.5' }, 'BTC').text).toBe('Filled 0.1 BTC at 59,500.5.');
@@ -42,6 +42,6 @@ describe('describeOutcome', () => {
       .toBe('Partly filled: 3.23708 of 12 BTC at 61,646.7. The rest was canceled: not enough margin.');
   });
   it('unknown cancel statuses are still readable', () => {
-    expect(describeOutcome({ state: 'canceled', status: 'canceled-something-new', size: '1', filled: '0', avgPrice: null }, 'BTC').text).toBe('Not filled. Lighter canceled the order: something new.');
+    expect(describeOutcome({ state: 'canceled', status: 'canceled-something-new', size: '1', filled: '0', avgPrice: null }, 'BTC').text).toBe('Not filled. The venue canceled the order: something new.');
   });
 });

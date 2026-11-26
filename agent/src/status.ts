@@ -50,8 +50,8 @@ export function buildStatus(s: Snapshot, extra: { news?: NewsView[]; newsAt?: st
       autonomyExpiresAt: lim.autonomyExpiresAt,
     },
     monitored: [
-      'Margin utilization on Lighter and Derive accounts, every check',
-      'Your bStock holdings and the Lighter hedge positions',
+      'Margin utilization on the perps and options accounts, every check',
+      'Your bStock holdings and the perps hedge positions',
       'Portfolio 99% loss against your loss limit',
       'Scheduled events you added (earnings, corporate actions)',
       cfg.hedge.news.enabled ? 'Headlines for the stocks you hold (advisory flags only)' : 'News is switched off',
@@ -96,9 +96,9 @@ export function buildLastRun(s: Snapshot, out: RunOut | null, ranApproved: numbe
     : out.outcome === 'error' ? 'Held this round because of a problem. See the reasons.'
     : em.mode === 'autonomous' ? 'Autonomous: nothing needs doing.' : 'Ask me first: nothing needs your approval.';
   const feed: LastRun['feed'] = {
-    bnbUsdc: r2(s.bsc.usdcUsd), bnbUsdt: r2(s.bsc.usdtUsd), lighterEquityUsd: s.lighterMain ? r2(s.lighterMain.equityUsd) : null, lighterFreeUsd: s.lighterMain ? r2(s.lighterMain.freeUsd) : null, deriveFreeUsd: s.deriveFree ? r2(s.deriveFree.freeUsd) : null,
+    bnbUsdc: r2(s.bsc.usdcUsd), bnbUsdt: r2(s.bsc.usdtUsd), /* shared field names (lib/agent-status): now the perps (Aster) account */ lighterEquityUsd: s.perpMain ? r2(s.perpMain.equityUsd) : null, lighterFreeUsd: s.perpMain ? r2(s.perpMain.freeUsd) : null, deriveFreeUsd: s.deriveFree ? r2(s.deriveFree.freeUsd) : null,
     bstocks: s.bsc.bstocks.filter((b) => b.qty > 0).slice(0, 30).map((b) => ({ symbol: b.symbol, qty: Math.round(b.qty * 1e6) / 1e6, usd: r2(b.value) })),
-    positions: Object.entries(s.lighterPositions).filter(([, v]) => v).slice(0, 30).map(([id, v]) => ({ market: s.config.hedge.legs.find((l) => l.marketId === Number(id))?.market ?? `market ${id}`, units: v })),
+    positions: Object.entries(s.perpPositions).filter(([, v]) => v).slice(0, 30).map(([t, v]) => ({ market: t, units: v })),
   };
   return {
     at: now.toISOString(), live, outcome: out?.outcome ?? 'idle', decision: decision.slice(0, 300), next, why: cut(out?.message || out?.note || null, 900),

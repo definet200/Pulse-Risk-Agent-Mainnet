@@ -3,12 +3,13 @@
 // are integer basis points; floats appear only in display helpers.
 //
 // Differences from the original terminal: the funding source is the user's BNB-chain wallet (not a hub "exchange
-// wallet"), and the accounts are Lighter's main account plus every Derive subaccount (one per risk
+// wallet"), and the accounts are the Aster perps account plus every Derive subaccount (one per risk
 // universe). Rules are executed by the external agent; this file is also its reference semantics.
 
-export const RULE_VENUES = ['lighter', 'derive'] as const;
+/** Venues a margin rule can watch. Lighter is dormant (kept in code), Aster is the perps venue. */
+export const RULE_VENUES = ['aster', 'derive'] as const;
 export type RuleVenue = (typeof RULE_VENUES)[number];
-export const VENUE_LABEL: Record<RuleVenue, string> = { lighter: 'Lighter', derive: 'Derive' };
+export const VENUE_LABEL: Record<RuleVenue, string> = { aster: 'Aster', derive: 'Derive' };
 
 export type RuleMode = 'utilization' | 'account_value';
 export type RuleUnits = 'percent' | 'usdc';
@@ -16,7 +17,7 @@ export const unitsOf = (m: RuleMode): RuleUnits => (m === 'utilization' ? 'perce
 
 export interface RiskRule {
   venue: RuleVenue;
-  /** '' = Lighter main account; for Derive the subaccount id (one per risk universe). */
+  /** '' = the perps (Aster) account; for Derive the subaccount id (one per risk universe). */
   accountRef: string;
   accountLabel?: string | null;
   mode: RuleMode;
@@ -56,12 +57,12 @@ export interface RuleState {
 
 export const ruleKey = (r: { venue: string; accountRef: string }) => `${r.venue}:${r.accountRef}`;
 
-/** Venue deposit floors: a top-up below this can't land (Lighter $5 → use $6 for fee headroom; Derive $5 → $7). */
-export const MIN_DEPOSIT_BASE_UNIT: Record<RuleVenue, string> = { lighter: '6000000', derive: '7000000' };
+/** Venue deposit floors: a top-up below this can't land (Aster: app floor $5 → use $6 for headroom; Derive $5 → $7). */
+export const MIN_DEPOSIT_BASE_UNIT: Record<RuleVenue, string> = { aster: '6000000', derive: '7000000' };
 /** Venue credit time; the effective cooldown is never shorter (a second top-up before the first lands double-funds). */
-export const MIN_COOLDOWN_SEC: Record<RuleVenue, number> = { lighter: 300, derive: 300 };
+export const MIN_COOLDOWN_SEC: Record<RuleVenue, number> = { aster: 300, derive: 300 };
 export const RELEASE_ARRIVAL: Record<RuleVenue, string> = {
-  lighter: 'Lighter withdraws to your Ethereum address (~26 min), then Relay bridges it to BNB',
+  aster: 'Aster withdraws straight to your BNB Chain wallet (you sign it in MetaMask)',
   derive: 'Derive withdraws to your Ethereum address (~14 min), then Relay bridges it to BNB',
 };
 

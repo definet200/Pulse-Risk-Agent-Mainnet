@@ -1,6 +1,6 @@
-// Pre-trade checks and result wording for the Lighter perps ticket. Pure, so it is unit-tested.
-// Lighter accepts any signed order (sendTx 200) and only rejects it on execution, so the ticket
-// catches the impossible ones first and then reports what really happened to the order.
+// Pre-trade checks and result wording for the perps ticket (Aster; Lighter is dormant). Pure, so it is unit-tested.
+// A venue can accept an order and only reject it on execution, so the ticket catches the impossible ones first and
+// then reports what really happened to the order. Shown text never names the venue.
 
 export interface PerpCheckInput {
   size: number;
@@ -36,7 +36,7 @@ export function checkPerpOrder(i: PerpCheckInput): PerpCheck {
   let problem: string | null = null;
   if (i.size > 0) {
     if (i.size < i.minBase) problem = `Minimum size is ${i.minBase} ${i.symbol}.`;
-    else if (!i.reduceOnly && notional > 0 && notional < i.minQuote) problem = `Lighter's minimum order is ${usd(i.minQuote)}; this one is ${usd(notional)}.`;
+    else if (!i.reduceOnly && notional > 0 && notional < i.minQuote) problem = `The perps minimum order is ${usd(i.minQuote)}; this one is ${usd(notional)}.`;
     else if (!i.reduceOnly && i.available !== null && margin > i.available + 1e-9) {
       const max = maxSize !== null && maxSize > 0 ? ` You can open at most about ${maxSize.toFixed(i.sizeDecimals)} ${i.symbol}.` : '';
       problem = `Not enough margin: this order needs ${usd(margin)} (${Math.round(i.imf * 100)}% of ${usd(notional)}), you have ${usd(i.available)} free.${max}`;
@@ -48,6 +48,9 @@ export function checkPerpOrder(i: PerpCheckInput): PerpCheck {
 export interface OrderOutcome { state: 'pending' | 'open' | 'filled' | 'partial' | 'canceled'; status: string | null; size: string | null; filled: string | null; avgPrice: string | null }
 
 const CANCEL_REASON: Record<string, string> = {
+  canceled: 'no reason given',
+  expired: 'it expired',
+  rejected: 'it was rejected',
   'canceled-margin-not-allowed': 'not enough margin',
   'canceled-not-enough-liquidity': 'not enough liquidity on the book',
   'canceled-too-much-slippage': 'the price moved past your limit',
@@ -70,8 +73,8 @@ export function describeOutcome(o: OrderOutcome, symbol: string): { ok: boolean;
     }
     case 'canceled': {
       const why = o.status ? CANCEL_REASON[o.status] ?? o.status.replace(/^canceled-/, '').replace(/-/g, ' ') : 'no reason given';
-      return { ok: false, text: `Not filled. Lighter canceled the order: ${why}.` };
+      return { ok: false, text: `Not filled. The venue canceled the order: ${why}.` };
     }
-    default: return { ok: true, text: 'Order sent. Waiting for Lighter to confirm…' };
+    default: return { ok: true, text: 'Order sent. Waiting for the venue to confirm…' };
   }
 }

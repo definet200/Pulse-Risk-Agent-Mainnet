@@ -18,7 +18,15 @@ function toSignable(td: TypedData) {
   return { ...td, message: { ...m, subaccountId: BigInt(m.subaccountId), nonce: BigInt(m.nonce), expiry: BigInt(m.expiry) } };
 }
 
+type AsterTypedData = { domain: { name: string; version: string; chainId: number; verifyingContract: `0x${string}` }; types: { Message: { name: string; type: string }[] }; primaryType: 'Message'; message: { msg: string } };
+
 const VENUES = {
+  aster: {
+    name: 'Perps', kind: 'Perps', color: 'text-[#a593ff]',
+    can: ['Place and cancel perp orders', 'Read your perps balance, positions and orders', 'Move your own perps balance from spot to futures margin'],
+    cannot: ['Withdraw: every withdrawal needs your MetaMask signature and pays only your own wallet', 'Trade spot or register other keys'],
+    sign: '1 MetaMask signature on BNB Chain (typed data, no gas)',
+  },
   lighter: {
     name: 'Perps', kind: 'Perps', color: 'text-[#a593ff]',
     can: ['Place, modify and cancel perp orders', 'Move USDC between your own perps accounts', 'Secure-withdraw to your own Ethereum address'],
@@ -53,13 +61,13 @@ export default function AgentsPage() {
       {!isConnected ? <div className="panel p-6 text-muted">Connect MetaMask first.</div>
         : !wallet ? <div className="panel p-6"><p className="mb-3 text-sm text-muted">Sign in (a message, no gas) so the backend knows this wallet is yours.</p><button className="btn-primary" disabled={signingIn} onClick={() => void signIn()}>{signingIn ? 'Signing…' : 'Sign in'}</button></div>
         : <div className="grid gap-4 md:grid-cols-2">
-          {(['lighter', 'derive'] as const).map((v) => <VenueCard key={v} venue={v} row={keys.data?.find((k) => k.venue === v && k.network === network)} />)}
+          {(['aster', 'derive'] as const).map((v) => <VenueCard key={v} venue={v} row={keys.data?.find((k) => k.venue === v && k.network === network)} />)}
         </div>}
     </div>
   );
 }
 
-function VenueCard({ venue, row }: { venue: 'lighter' | 'derive'; row?: AgentKeyRow }) {
+function VenueCard({ venue, row }: { venue: 'aster' | 'lighter' | 'derive'; row?: AgentKeyRow }) {
   const meta = VENUES[venue];
   const { network } = useVenueNetwork();
   const { chainId } = useAccount();
@@ -74,7 +82,17 @@ function VenueCard({ venue, row }: { venue: 'lighter' | 'derive'; row?: AgentKey
   async function register() {
     setErr(null);
     try {
-      if (venue === 'lighter') {
+      if (venue === 'aster') {
+        setStep('Generating the agent key…');
+        const prep = await getJson<{ typedData: AsterTypedData; msg: string; agent: string; expiresAt: number }>('/api/agent/register/aster', { method: 'POST', body: JSON.stringify({ network, step: 'prepare' }) });
+        const want = prep.typedData.domain.chainId;
+        // The approval is chain-bound typed data: MetaMask must be on BNB Chain (testnet: BNB testnet) to sign it.
+        if (chainId !== want) { setStep(`Switch MetaMask to ${want === bsc.id ? 'BNB Chain' : 'BNB testnet'}…`); await switchChainAsync({ chainId: want as 56 | 97 }); }
+        setStep(`Approve agent ${shortAddr(prep.agent)} in MetaMask (trade only, never withdraw)…`);
+        const signature = await signTypedDataAsync({ domain: prep.typedData.domain, types: prep.typedData.types, primaryType: 'Message', message: prep.typedData.message });
+        setStep('Registering with perps…');
+        await getJson('/api/agent/register/aster', { method: 'POST', body: JSON.stringify({ network, step: 'finalize', signature }) });
+      } else if (venue === 'lighter') {
         setStep('Generating key and signing ChangePubKey…');
         const prep = await getJson<{ messageToSign: string; accountIndex: number }>('/api/agent/register/lighter', { method: 'POST', body: JSON.stringify({ network, step: 'prepare' }) });
         setStep(`Approve in MetaMask (perps account #${prep.accountIndex})…`);
@@ -99,7 +117,7 @@ function VenueCard({ venue, row }: { venue: 'lighter' | 'derive'; row?: AgentKey
       setStep(null);
     } catch (e) {
       setErr((e as Error).message.split('\n')[0]); setStep(null);
-    } finally { void qc.invalidateQueries({ queryKey: ['agent-keys'] }); void qc.invalidateQueries({ queryKey: ['derive-account'] }); }
+    } finally { void qc.invalidateQueries({ queryKey: ['agent-keys'] }); void qc.invalidateQueries({ queryKey: ['derive-account'] }); void qc.invalidateQueries({ queryKey: ['aster-account'] }); }
   }
 
   async function forget() {
@@ -115,11 +133,11 @@ function VenueCard({ venue, row }: { venue: 'lighter' | 'derive'; row?: AgentKey
       </div>
       {row && (
         <div className="rounded-xl bg-bg p-3 text-xs space-y-1 num">
-          <div className="flex justify-between"><span className="text-muted">{venue === 'lighter' ? 'Account index' : 'Subaccount'}</span><span>{row.account_ref}</span></div>
-          <div className="flex justify-between"><span className="text-muted">{venue === 'lighter' ? 'API key index' : 'Session key'}</span><span>{venue === 'lighter' ? row.key_ref : shortAddr(row.key_ref)}</span></div>
+          <div className="flex justify-between"><span className="text-muted">{venue === 'aster' ? 'Account' : venue === 'lighter' ? 'Account index' : 'Subaccount'}</span><span>{venue === 'aster' ? shortAddr(row.account_ref) : row.account_ref}</span></div>
+          <div className="flex justify-between"><span className="text-muted">{venue === 'lighter' ? 'API key index' : venue === 'aster' ? 'Agent' : 'Session key'}</span><span>{venue === 'lighter' ? row.key_ref : shortAddr(row.key_ref)}</span></div>
           <div className="flex justify-between gap-4"><span className="shrink-0 text-muted">Scope</span>
             <span className="flex min-w-0 flex-wrap justify-end gap-1">{row.scope.split(',').map((sc) => <span key={sc} className="rounded bg-panel2 px-1.5 py-0.5 text-[11px]">{sc}</span>)}</span></div>
-          {row.expires_at && <div className="flex justify-between"><span className="text-muted">Expires</span><span>{new Date(row.expires_at * 1000).toLocaleDateString()}</span></div>}
+          {row.expires_at && <div className="flex justify-between"><span className="text-muted">Expires</span><span>{new Date(row.expires_at > 1e12 ? row.expires_at : row.expires_at * 1000).toLocaleDateString()}{row.expires_at > 1e12 && row.expires_at < Date.now() ? ' (expired: rotate)' : ''}</span></div>}
         </div>
       )}
       <div className="text-sm">
@@ -128,7 +146,7 @@ function VenueCard({ venue, row }: { venue: 'lighter' | 'derive'; row?: AgentKey
         <div className="mb-1 mt-3 text-muted">It cannot</div>
         {meta.cannot.map((c) => <div key={c} className="flex gap-2"><ShieldAlert size={15} className="mt-0.5 shrink-0 text-down" />{c}</div>)}
       </div>
-      <div className="text-xs text-muted">Requires: {meta.sign}. Your {meta.name} account must exist (first deposit creates it).</div>
+      <div className="text-xs text-muted">Requires: {meta.sign}.{venue === 'aster' ? ' The agent expires after 180 days; rotate it before then.' : ` Your ${meta.name} account must exist (first deposit creates it).`}</div>
       <div className="mt-auto flex gap-2">
         <button className="btn-primary flex-1" disabled={!!step} onClick={() => void register()}>{step ? 'Working…' : active ? 'Rotate key' : 'Register agent'}</button>
         {row && <button className="btn-ghost" onClick={() => void forget()} title="Forget locally. To revoke at the venue, rotate the key.">Forget</button>}

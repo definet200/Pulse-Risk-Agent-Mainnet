@@ -23,15 +23,15 @@ const iso = (h: number) => new Date(Date.now() + h * 3_600_000).toISOString();
 const s = fixtureSnapshot({ wallet, network: c.AGENT_NETWORK, health: {} });
 s.config.mode = 'confirm'; s.config.rebalance.enabled = false;
 s.config.hedge = { enabled: true, driftThresholdPct: 5, sizing: 'loss_limit', news: { enabled: true }, legs: [
-  { bstock: 'NVDAB', venue: 'lighter', kind: 'perp', market: 'NVDA', marketId: 110, hedgeRatio: 1 },
-  { bstock: 'TSLAB', venue: 'lighter', kind: 'perp', market: 'TSLA', marketId: 120, hedgeRatio: 1 },
-  { bstock: 'AAPLB', venue: 'lighter', kind: 'perp', market: 'AAPL', marketId: 130, hedgeRatio: 1 }] };
+  { bstock: 'NVDAB', venue: 'aster', kind: 'perp', market: 'NVDA', hedgeRatio: 1 },
+  { bstock: 'TSLAB', venue: 'aster', kind: 'perp', market: 'TSLA', hedgeRatio: 1 },
+  { bstock: 'AAPLB', venue: 'aster', kind: 'perp', market: 'AAPL', hedgeRatio: 1 }] };
 s.config.risk = { ...s.config.risk, lossTolerancePct: 5, premiumBudgetWeeklyPct: 1 };
 s.config.limits.maxNotionalPerTradeUsd = 50_000; s.config.limits.maxNotionalPerDayUsd = 100_000;
 s.config.events = [{ ticker: 'NVDA', at: iso(18), kind: 'earnings', gapPct: 12 }];
 s.bsc = { usdcUsd: 3000, usdtUsd: 0, allowanceUsdcBase: '2500000000', bstocks: [
   { symbol: 'NVDAB', qty: 100, value: 20_000, allowanceQty: 100 }, { symbol: 'TSLAB', qty: 75, value: 15_000, allowanceQty: 75 }, { symbol: 'AAPLB', qty: 75, value: 15_000, allowanceQty: 75 }] };
-s.lighterPositions = {}; s.lighterMain = { equityUsd: 0, freeUsd: 0 }; s.deriveFree = { ref: '42', freeUsd: 0 }; s.bridgeEtaSec = 1200; s.deriveEtaSec = 1800; s.hedgeProblems = [];
+s.perpPositions = {}; s.perpMain = { equityUsd: 0, freeUsd: 0 }; s.deriveFree = { ref: '42', freeUsd: 0 }; s.perpEtaSec = 1200; s.deriveEtaSec = 1800; s.hedgeProblems = [];
 s.market = { sigmaDay: { NVDA: 0.032, TSLA: 0.042, AAPL: 0.016 }, at: new Date().toISOString() };
 s.today = { notionalUsd: 0, lossUsd: 0, capitalOffBnbUsd: 0, pausedReason: null };
 s.options = { NVDA: sampleChain('NVDA', 200, 0.4) };

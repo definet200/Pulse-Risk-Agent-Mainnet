@@ -5,7 +5,7 @@ import { buildStatus } from './status';
 import { memoryActions, setActionsBackend } from './tools/appApi';
 import { closeStore, openStore } from './tools/store';
 
-// One realistic test portfolio across Lighter, Derive and bStocks, with news, run through the real agent graph tick
+// One realistic test portfolio across perps, Derive and bStocks, with news, run through the real agent graph tick
 // by tick (dry run). After each tick the chosen action's effect is applied to the portfolio so the next tick sees it.
 //   npm run demo:portfolio                   autonomous mode
 //   npm run demo:portfolio -- --confirm      confirmation mode: every action is approved automatically, as if you clicked Approve
@@ -19,11 +19,10 @@ const portfolio = () => samplePortfolio(confirmMode ? 'confirm' : 'autonomous');
 const snap0 = portfolio();
 
 console.log('══ INPUT: the test portfolio ══');
-console.log('\n1. LIGHTER');
+console.log('\n1. PERPS');
 console.table({
   'Main account': `equity ${money(4000)}, margin used ${money(1400)} (35%), free ${money(2600)}`,
   'Main positions': 'ETH long 10 (about $30,000), TSLA short 20 (about $5,000, an existing hedge)',
-  'Sub-account #7': `equity ${money(300)}, margin used ${money(234)} (78%), rule: top up above 70%`,
 });
 console.log('2. DERIVE');
 console.table({
@@ -66,7 +65,7 @@ console.log('\nSEQUENCE'); console.table(rows);
 const after = buildStatus(s);
 console.log('BEFORE vs AFTER');
 console.table({
-  'Lighter sub #7 utilization': { before: '78%', after: `${(s.health['lighter:7'].utilBps! / 100).toFixed(0)}%` },
+  'Perps utilization': { before: '35%', after: `${(s.health['aster:'].utilBps! / 100).toFixed(0)}%` },
   'Derive 42 utilization': { before: '86%', after: `${(s.health['derive:42'].utilBps! / 100).toFixed(0)}%` },
   'BNB USDC': { before: money(400), after: money(s.bsc.usdcUsd) },
   'SPYB / AAPLB units free': { before: '10 / 50', after: `${s.bsc.bstocks.find((b) => b.symbol === 'SPYB')!.qty.toFixed(2)} / ${s.bsc.bstocks.find((b) => b.symbol === 'AAPLB')!.qty.toFixed(2)}` },

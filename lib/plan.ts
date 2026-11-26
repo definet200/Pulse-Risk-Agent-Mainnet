@@ -40,7 +40,7 @@ export function planFunding(amountBaseUnit: string, funding: Funding, cfg: Agent
 }
 
 export interface HedgeAction {
-  bstock: string; venue: 'lighter' | 'derive'; kind: 'perp' | 'put'; market: string; key: string;
+  bstock: string; venue: 'aster' | 'lighter' | 'derive'; kind: 'perp' | 'put'; market: string; key: string;
   held: number;
   /** Hedge size the rule wants, in the hedge instrument's units (perp size or put contracts); null = no price yet. */
   targetUnits: number | null;

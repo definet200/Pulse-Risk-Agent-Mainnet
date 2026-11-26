@@ -21,7 +21,7 @@ describe('planner + guard', () => {
     expect(BigInt(candidates[0].amountBaseUnit)).toBeGreaterThanOrEqual(6_000_000n);
   });
   it('makes nothing when inside the band', () => {
-    const s = fixtureSnapshot({ health: { 'lighter:': { connected: true, utilBps: 5000, accountUsd: 100, usedUsd: 50 } } });
+    const s = fixtureSnapshot({ health: { 'aster:': { connected: true, utilBps: 5000, accountUsd: 100, usedUsd: 50 } } });
     expect(buildCandidates(s).candidates).toHaveLength(0);
   });
   it('guard refuses any move when data quality is bad', () => {
@@ -32,8 +32,8 @@ describe('planner + guard', () => {
   it('guard refuses above the allowance and during cooldown and over the 24h cap', () => {
     const s = fixtureSnapshot(); const c = buildCandidates(s).candidates[0];
     expect(checkCandidate(c, { ...s, bsc: { ...s.bsc, allowanceUsdcBase: '1000000' } })).toMatch(/allowance/);
-    expect(checkCandidate(c, { ...s, ruleState: { 'lighter:': { lastMoveAt: new Date().toISOString() } } })).toMatch(/cooling/);
-    expect(checkCandidate(c, { ...s, moved24hBase: { 'lighter:': '1999999999' } })).toMatch(/24h/);
+    expect(checkCandidate(c, { ...s, ruleState: { 'aster:': { lastMoveAt: new Date().toISOString() } } })).toMatch(/cooling/);
+    expect(checkCandidate(c, { ...s, moved24hBase: { 'aster:': '1999999999' } })).toMatch(/24h/);
   });
   it('guard refuses USDT funding (no allowance check yet) and bStocks the user did not allow', () => {
     const s = fixtureSnapshot(); const c = buildCandidates(s).candidates[0];
@@ -55,16 +55,16 @@ describe('graph (LLM off, dry run)', () => {
     expect(out.steps).toHaveLength(0);
   });
   it('ends quietly with no candidates', async () => {
-    const out = await buildGraph().invoke({ snapshot: fixtureSnapshot({ health: { 'lighter:': { connected: true, utilBps: 5000, accountUsd: 100, usedUsd: 50 } } }) });
+    const out = await buildGraph().invoke({ snapshot: fixtureSnapshot({ health: { 'aster:': { connected: true, utilBps: 5000, accountUsd: 100, usedUsd: 50 } } }) });
     expect(out.outcome).toBe('idle');
   });
   it('respects the in-flight lock across runs', async () => {
     const s = fixtureSnapshot();
     const { acquireLock } = await import('../src/tools/store');
-    acquireLock(`${s.wallet.toLowerCase()}:${s.network}:lighter:`);
+    acquireLock(`${s.wallet.toLowerCase()}:${s.network}:aster:`);
     const out = await buildGraph().invoke({ snapshot: s });
     expect(out.outcome).toBe('idle'); // guard filter drops it at plan time
-    logMove(s.wallet, s.network, 'lighter:', 'in', '1');
+    logMove(s.wallet, s.network, 'aster:', 'in', '1');
   });
 });
 

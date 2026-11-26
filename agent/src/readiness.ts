@@ -1,3 +1,4 @@
+import { ASTER_MIN_NOTIONAL_USD } from '../../lib/aster';
 import type { Snapshot } from './types';
 
 // "Needs your attention": everything that would silently stop the agent from acting on its own, each with the fix.
@@ -7,7 +8,7 @@ export interface ReadinessEnv {
   /** config().live: false = dry run (decides, never sends). */
   live: boolean;
   agentBsc: string | null;
-  /** Agent's BNB on BNB Chain (gas for pulls, swaps and the bridge), wei. null = could not read. */
+  /** Agent's BNB on BNB Chain (gas for pulls, swaps and the perps deposit), wei. null = could not read. */
   agentBnbWei: bigint | null;
   /** Agent's ETH on Ethereum (gas for Derive deposits), wei. null = not needed or could not read. */
   agentEthWei: bigint | null;
@@ -15,7 +16,7 @@ export interface ReadinessEnv {
 
 export const MIN_AGENT_BNB_WEI = 500_000_000_000_000n;   // 0.0005 BNB: dozens of BSC transactions at 0.05 gwei
 export const MIN_AGENT_ETH_WEI = 300_000_000_000_000n;   // 0.0003 ETH: one Derive approve + deposit
-const LIGHTER_MIN_ORDER_USD = 10;
+const PERP_MIN_ORDER_USD = ASTER_MIN_NOTIONAL_USD;   // perps (Aster) minimum order notional: $5
 const DERIVE_TOPUP_MIN_USD = 8;
 const eth = (w: bigint) => (Number(w) / 1e18).toFixed(5);
 const usd = (n: number) => `$${n.toFixed(2)}`;
@@ -48,12 +49,12 @@ export function readinessAlerts(s: Snapshot, env: ReadinessEnv): string[] {
   }
 
   if (hedging) {
-    for (const leg of cfg.hedge.legs.filter((l) => l.venue === 'lighter')) {
+    for (const leg of cfg.hedge.legs.filter((l) => l.venue === 'aster')) {
       const b = s.bsc.bstocks.find((x) => x.symbol === leg.bstock && x.qty > 0);
-      if (b && b.value * leg.hedgeRatio < LIGHTER_MIN_ORDER_USD) out.push(`${leg.market}: your ${leg.bstock} is ${usd(b.value)}, so its hedge would be under Lighter's ${usd(LIGHTER_MIN_ORDER_USD)} minimum order. Hold at least ${usd(LIGHTER_MIN_ORDER_USD / Math.max(leg.hedgeRatio, 0.01))} of ${leg.bstock} for the agent to hedge it.`);
+      if (b && b.value * leg.hedgeRatio < PERP_MIN_ORDER_USD) out.push(`${leg.market}: your ${leg.bstock} is ${usd(b.value)}, so its hedge would be under the perps venue's ${usd(PERP_MIN_ORDER_USD)} minimum order. Hold at least ${usd(PERP_MIN_ORDER_USD / Math.max(leg.hedgeRatio, 0.01))} of ${leg.bstock} for the agent to hedge it.`);
     }
   }
 
-  for (const [venue, why] of Object.entries(s.venueProblems ?? {})) out.push(`${venue === 'lighter' ? 'Lighter' : 'Derive'}: ${why}. Register it on the Agent keys page.`);
+  for (const [venue, why] of Object.entries(s.venueProblems ?? {})) out.push(`${venue === 'aster' ? 'Perps' : 'Options'}: ${why}. Register it on the Agent keys page.`);
   return out;
 }

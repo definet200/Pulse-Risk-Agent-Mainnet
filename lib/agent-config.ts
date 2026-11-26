@@ -16,7 +16,7 @@ const bps = z.number().int().min(1).max(10_000);
  */
 export const HedgeLeg = z.object({
   bstock: z.string().min(2).max(12),            // e.g. 'NVDAB' (held on BSC)
-  venue: z.enum(['lighter', 'derive']),
+  venue: z.enum(['aster', 'lighter', 'derive']),
   /** perp = short the perp; put = hold protective puts (long), rolled before expiry. */
   kind: z.enum(['perp', 'put']).default('perp'),
   market: z.string().min(1).max(24),            // Lighter symbol ('NVDA') or Derive currency ('NVDA', 'US500')
@@ -28,19 +28,19 @@ export const HedgeLeg = z.object({
     targetDaysToExpiry: z.number().int().min(2).max(365), // buy the expiry closest to this
   }).optional(),
 }).superRefine((l, ctx) => {
-  if (l.venue === 'lighter' && l.kind !== 'perp') ctx.addIssue({ code: 'custom', path: ['kind'], message: 'Lighter hedges are perps only' });
+  if ((l.venue === 'lighter' || l.venue === 'aster') && l.kind !== 'perp') ctx.addIssue({ code: 'custom', path: ['kind'], message: 'Perp hedges are perps only' });
   if (l.venue === 'lighter' && l.marketId === undefined) ctx.addIssue({ code: 'custom', path: ['marketId'], message: 'Lighter hedge needs marketId' });
   if (l.kind === 'put' && !l.put) ctx.addIssue({ code: 'custom', path: ['put'], message: 'Put hedge needs strikePct and expiry settings' });
   if (l.put && l.put.targetDaysToExpiry <= l.put.minDaysToExpiry) ctx.addIssue({ code: 'custom', path: ['put', 'targetDaysToExpiry'], message: 'Target expiry must be later than the roll point' });
 });
 
 /** Key used to look up the current hedge position for a leg. */
-export const hedgeKey = (l: { venue: 'lighter' | 'derive'; kind?: 'perp' | 'put'; market: string; marketId?: number }) =>
-  l.venue === 'lighter' ? `lighter:${l.marketId}` : `derive-${l.kind ?? 'perp'}:${l.market}`;
+export const hedgeKey = (l: { venue: 'aster' | 'lighter' | 'derive'; kind?: 'perp' | 'put'; market: string; marketId?: number }) =>
+  l.venue === 'aster' ? `aster:${l.market}` : l.venue === 'lighter' ? `lighter:${l.marketId}` : `derive-${l.kind ?? 'perp'}:${l.market}`;
 
 /** One auto-rebalance rule for one venue account (see lib/risk-rules.ts for the semantics). */
 export const RiskRuleSchema = z.object({
-  venue: z.enum(['lighter', 'derive']),
+  venue: z.enum(['aster', 'lighter', 'derive']),
   accountRef: z.string().max(24),
   accountLabel: z.string().max(40).nullable().optional(),
   mode: z.enum(['utilization', 'account_value']),
@@ -87,7 +87,8 @@ export const Limits = z.object({
   maxNotionalPerTradeUsd: z.number().min(0).max(10_000_000),
   maxNotionalPerDayUsd: z.number().min(0).max(100_000_000),
   /** Cap on perp leverage. The agent also caps it so that (p99 gap x leverage) stays under ~30% of margin. */
-  maxLeverage: z.number().min(1).max(10),
+  /** Your cap on leverage (agent hedges and chat trades). Each market's own maximum still applies (NVDA 20x). */
+  maxLeverage: z.number().min(1).max(125),
   /** Stop autonomous actions once the account has lost this much since the start of the day. */
   dailyLossCapUsd: z.number().min(0).max(100_000_000),
   /** Most idle margin the user will park on Lighter and Derive. */
@@ -204,7 +205,7 @@ export const DEFAULT_CONFIG: AgentConfig = {
 export const RuleStateSchema = z.object({
   wallet: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
   network: z.enum(['mainnet', 'testnet']),
-  ruleKey: z.string().regex(/^(lighter|derive):\d{0,24}$/),
+  ruleKey: z.string().regex(/^(aster|lighter|derive):\d{0,24}$/),
   topUpDoneAt: z.string().datetime().nullable().optional(),
   releaseDoneAt: z.string().datetime().nullable().optional(),
   releaseBelowSince: z.string().datetime().nullable().optional(),
@@ -217,7 +218,7 @@ export const AgentEvent = z.object({
   wallet: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
   network: z.enum(['mainnet', 'testnet']),
   kind: z.enum(['hedge', 'rebalance', 'bridge', 'info', 'error', 'news', 'warning']),
-  venue: z.enum(['lighter', 'derive', 'bsc', 'relay']).optional(),
+  venue: z.enum(['aster', 'lighter', 'derive', 'bsc', 'relay']).optional(),
   status: z.enum(['pending', 'done', 'failed']).optional(),
   message: z.string().min(1).max(500),
   payload: z.record(z.unknown()).optional(),

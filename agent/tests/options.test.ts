@@ -17,12 +17,12 @@ const hours = (h: number) => new Date(Date.now() + h * 3_600_000).toISOString();
 
 /** $12,000 NVDAB (60 x $200). NVDA reports in 20h. Derive has $400 free collateral for a premium. */
 function snap(over: Partial<Snapshot> = {}): Snapshot {
-  const s = fixtureSnapshot({ health: { 'lighter:': { connected: true, utilBps: 3000, accountUsd: 500, usedUsd: 150 } } });
-  s.config.hedge = { enabled: true, driftThresholdPct: 5, sizing: 'loss_limit', news: { enabled: false }, legs: [{ bstock: 'NVDAB', venue: 'lighter', kind: 'perp', market: 'NVDA', marketId: 110, hedgeRatio: 1 }] };
+  const s = fixtureSnapshot({ health: { 'aster:': { connected: true, utilBps: 3000, accountUsd: 500, usedUsd: 150 } } });
+  s.config.hedge = { enabled: true, driftThresholdPct: 5, sizing: 'loss_limit', news: { enabled: false }, legs: [{ bstock: 'NVDAB', venue: 'aster', kind: 'perp', market: 'NVDA', hedgeRatio: 1 }] };
   s.config.risk = { ...s.config.risk, lossTolerancePct: 5 };
   s.config.events = [{ ticker: 'NVDA', at: hours(20), kind: 'earnings', gapPct: 12 }];
   s.bsc = { usdcUsd: 3000, usdtUsd: 0, allowanceUsdcBase: '2500000000', bstocks: [{ symbol: 'NVDAB', qty: 60, value: 12_000, allowanceQty: 60 }] };
-  s.lighterPositions = {}; s.lighterMain = { equityUsd: 500, freeUsd: 350 }; s.bridgeEtaSec = 600; s.deriveEtaSec = 1800; s.hedgeProblems = [];
+  s.perpPositions = {}; s.perpMain = { equityUsd: 500, freeUsd: 350 }; s.perpEtaSec = 600; s.deriveEtaSec = 1800; s.hedgeProblems = [];
   s.market = { sigmaDay: { NVDA: 0.032 }, at: new Date().toISOString() };
   s.today = { notionalUsd: 0, lossUsd: 0, capitalOffBnbUsd: 500, pausedReason: null };
   s.options = { NVDA: sampleChain('NVDA', 200, 0.5) };
@@ -61,12 +61,12 @@ describe('put hedges on Derive', () => {
     expect(p.varAfterPct).toBeLessThan(p.varBeforePct); expect(p.worstCase).toMatch(/lose at most the premium/);
     expect(p.assumptions.join(' ')).toMatch(/not connected yet/); expect(c.explain).not.toMatch(/not connected/);
   });
-  it('uses a Lighter perp when no event is near, or when Derive has no put to offer', () => {
+  it('uses a perp when no event is near, or when Derive has no put to offer', () => {
     const none = snap(); none.config.events = [];
     expect(buildCandidates(none).candidates.find((x) => x.kind === 'hedge')?.hedge?.instrument).not.toBe('put');
     const noChain = snap(); noChain.options = undefined;
     const c = buildCandidates(noChain).candidates.find((x) => x.kind === 'hedge')!;
-    expect(c.venue).toBe('lighter'); expect(c.hedge!.instrument).toBeUndefined();
+    expect(c.venue).toBe('aster'); expect(c.hedge!.instrument).toBeUndefined();
   });
   it('never buys the same protection twice: a put already held counts as a hedge', () => {
     const big = () => { const s = snap(); s.config.limits.maxNotionalPerTradeUsd = 1_000_000; s.config.limits.maxNotionalPerDayUsd = 1_000_000; return s; };
@@ -84,13 +84,13 @@ describe('put hedges on Derive', () => {
     expect(c.plan!.marginPlan?.to).toMatch(/Derive/); expect(c.plan!.marginPlan!.moveUsd).toBeGreaterThan(0);
   });
   it('spec scenario 3: a bridge slower than the event gives a partial put from the collateral already on Derive', () => {
-    const s = snap({ deriveFree: { ref: '42', freeUsd: 60 }, deriveEtaSec: 1500, bridgeEtaSec: 1500, lighterMain: { equityUsd: 0, freeUsd: 0 } });   // neither bridge lands in time and Lighter has no margin
+    const s = snap({ deriveFree: { ref: '42', freeUsd: 60 }, deriveEtaSec: 1500, perpEtaSec: 1500, perpMain: { equityUsd: 0, freeUsd: 0 } });   // neither bridge lands in time and Lighter has no margin
     s.config.events = [{ ticker: 'NVDA', at: hours(0.33), kind: 'earnings', gapPct: 12 }];
     const c = buildCandidates(s).candidates.find((x) => x.kind === 'hedge')!;
     expect(c.plan!.marginPlan).toBeNull(); expect(c.plan!.cost.premiumUsd + c.plan!.cost.feesUsd).toBeLessThanOrEqual(60 + 0.01);
     expect(c.plan!.assumptions.join(' ')).toMatch(/Only \$/);
   });
-  it('says why no put can be bought in time, then falls back to a Lighter perp that Lighter can carry', () => {
+  it('says why no put can be bought in time, then falls back to a perp the perps account can carry', () => {
     const s = snap({ deriveFree: { ref: '42', freeUsd: 0 }, deriveEtaSec: 1500 });
     s.config.events = [{ ticker: 'NVDA', at: hours(0.33), kind: 'earnings', gapPct: 12 }];
     const r = buildCandidates(s);

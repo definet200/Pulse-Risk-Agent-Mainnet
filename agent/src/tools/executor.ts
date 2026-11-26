@@ -1,14 +1,15 @@
 import { ruleKey } from '../../../lib/risk-rules';
 import { config } from '../config';
-import { getDeriveCreds, getLighterCreds, type LighterCreds } from './appApi';
+import { getAsterCreds, getDeriveCreds, type AsterCreds } from './appApi';
+import * as aster from './aster';
+import { describeAsterFunding, fundAster, type AsterFundDeps } from './asterDeposit';
 import * as bsc from './bsc';
 import * as derive from './derive';
 import * as funding from './deriveFunding';
 import { SELL_BUFFER, splitFunding, type SaleLeg } from './funding';
-import * as lighter from './lighter';
 import * as pancake from './pancake';
-import * as relay from './relay';
 import * as store from './store';
+import { asterSymbol } from '../../../lib/aster';
 import type { Candidate, Snapshot, StepResult } from '../types';
 
 // Runs the steps of ONE approved candidate. In a dry run nothing is signed or sent: each step is returned as
@@ -38,18 +39,20 @@ export function describeSteps(s: Snapshot, c: Candidate): string[] {
       const main = h.kind === 'perp' ? (h.deltaToShort > 0 ? `place a Derive market order (IOC, 2% through the touch) on the RWA subaccount: sell ${q} ${h.derive.instrument} (adds to your short hedge)` : `place a Derive market order (IOC, reduce-only): buy ${q} ${h.derive.instrument} (closes part of your short hedge)`) : `buy ${q} ${h.derive.instrument} (put) on Derive with an IOC order 2% through the ask`;
       return [...sells, main, 'check that the resulting Derive position matches the plan'];
     }
-    const dest = h.option ? 'Derive subaccount (via Ethereum USDC)' : 'Lighter main account';
-    const margin = mp ? [...fundingSteps(s, { amountBaseUnit: baseOfUsd(mp.moveUsd).toString(), funding: [{ source: 'bsc_usdc', amountUsd: mp.moveUsd }] }, dest), 'wait for Relay status = success'] : [];
+    const moveBase = mp ? baseOfUsd(mp.moveUsd) : 0n;
+    const margin = !mp ? [] : h.option ? [...fundingSteps(s, { amountBaseUnit: moveBase.toString(), funding: [{ source: 'bsc_usdc', amountUsd: mp.moveUsd }] }, 'Derive subaccount (via Ethereum USDC)'), 'wait for Relay status = success']
+      : describeAsterFunding(s, { usdcBase: moveBase, usdtBase: 0n, sales: [] }, moveBase.toString());
     if (h.option) return [...margin, `buy ${h.option.contracts} ${h.market} put${h.option.contracts === 1 ? '' : 's'} (strike ${h.option.strike}, expires ${h.option.expiry.slice(0, 10)}) on Derive with a limit order at the ask $${h.option.ask}`, 'check the put position on Derive matches the plan'];
-    const order = h.orderQtys && h.orderQtys.length > 1 ? `place ${h.orderQtys.length} Lighter market orders (${h.orderQtys.join(', ')} ${h.market}), one after another, each under your per-trade cap` : h.deltaToShort > 0 ? `place a Lighter market order: sell ${Math.abs(h.deltaToShort)} ${h.market} (adds to your short hedge)` : `place a Lighter market order: buy ${Math.abs(h.deltaToShort)} ${h.market} (closes part of your short hedge)`;
+    const sym = asterSymbol(h.market);
+    const order = h.orderQtys && h.orderQtys.length > 1 ? `place ${h.orderQtys.length} perps market orders (${h.orderQtys.join(', ')} ${sym}), one after another, each under your per-trade cap` : h.deltaToShort > 0 ? `place a perps market order: sell ${Math.abs(h.deltaToShort)} ${sym} (adds to your short hedge)` : `place a perps market order (reduce-only): buy ${Math.abs(h.deltaToShort)} ${sym} (closes part of your short hedge)`;
     return [...margin, order, 'check that the resulting position matches the plan'];
   }
   const rule = c.rule!; const amt = usd(c.amountBaseUnit);
   if (c.kind === 'top_up') {
-    if (rule.venue === 'lighter') return [...fundingSteps(s, c, 'Lighter main account'), ...(rule.accountRef ? [`transfer ${amt} Lighter main → sub-account #${rule.accountRef}`] : []), 'wait for Relay status = success'];
+    if (rule.venue === 'aster') { const sp = splitFunding(c); return describeAsterFunding(s, { usdcBase: sp.sales.length || sp.usdtBase > 0n ? sp.usdcBase : BigInt(c.amountBaseUnit), usdtBase: sp.usdtBase, sales: sp.sales }, c.amountBaseUnit); }
     return [...fundingSteps(s, c, 'Ethereum USDC'), 'depositToNewSubaccount on Derive', `transfer_spot into subaccount ${rule.accountRef || 'default'}`];
   }
-  return rule.venue === 'lighter' ? [`Lighter secure withdraw ${amt} to the user's Ethereum address (~26 min)`] : [`Derive private/withdraw ${amt} to the user's Ethereum address (~14 min)`];
+  return rule.venue === 'aster' ? [`nothing: releasing ${amt} from perps needs your wallet signature in the app (the agent cannot withdraw)`] : [`Derive private/withdraw ${amt} to the user's Ethereum address (~14 min)`];
 }
 
 async function once(key: string, label: string, fn: () => Promise<string | undefined>, out: StepResult[]): Promise<boolean> {
@@ -64,30 +67,6 @@ async function once(key: string, label: string, fn: () => Promise<string | undef
     out.push({ step: label, status: 'failed', detail: e instanceof Error ? e.message : String(e) });
     return false;
   }
-}
-
-/**
- * Put `usdcBase` of the user's USDC, swapped USDT and the proceeds of bStock sales onto the Lighter main account
- * (one Relay bridge). A sale is final, so there is no rollback: a failed step stops the move and is reported.
- */
-export async function fundLighterMain(s: Snapshot, k: string, creds: LighterCreds, usdcBase: bigint, sales: SaleLeg[], out: StepResult[], usdtBase = 0n): Promise<boolean> {
-  const agent = bsc.agentAddress(); if (!agent) throw new Error('AGENT_BSC_PRIVATE_KEY is not set');
-  const totalWei = await collectOnAgent(s, k, usdcBase, sales, out, usdtBase);
-  if (totalWei === null) return false;
-
-  // One bridge for everything.
-  let requestId = '';
-  const bridged = await once(`${k}:bridge`, 'Bridge via Relay', async () => {
-    const req = { depositor: agent, recipientAccountIndex: String(creds.accountIndex), amountWei: totalWei };
-    const v = relay.validateQuote(await relay.getQuote(req), req);
-    requestId = v.requestId; await relay.executeSteps(v); return v.requestId;
-  }, out);
-  if (!bridged) return false;
-  requestId ||= store.getStep(`${k}:bridge`)?.ref ?? '';
-  return once(`${k}:status`, 'Wait for Relay delivery', async () => {
-    for (let i = 0; i < 40; i++) { const st = await relay.getStatus(requestId); if (st === 'success') return requestId; if (st === 'refund' || st === 'failed') throw new Error(`Relay ${st}`); await sleep(6000); }
-    throw new Error('Relay still pending: check status before retrying');
-  }, out);
 }
 
 /**
@@ -174,15 +153,19 @@ async function topUpDerive(s: Snapshot, c: Candidate, k: string, out: StepResult
   return out;
 }
 
-async function verifyPosition(net: Snapshot['network'], creds: LighterCreds, marketId: number, expected: number, tolerance: number): Promise<string | null> {
+async function verifyPosition(net: Snapshot['network'], creds: AsterCreds, ticker: string, expected: number, tolerance: number): Promise<string | null> {
   let last = NaN;
   for (let i = 0; i < 5; i++) {
     await sleep(i === 0 ? 2000 : 3000);
-    last = lighter.positionsOf(await lighter.getAccount(net, creds.accountIndex))[marketId] ?? 0;
+    last = (await aster.getPositions(net, creds))[ticker] ?? 0;
     if (Math.abs(last - expected) <= tolerance) return null;
   }
   return `position is ${last}, the plan expected ${expected}`;
 }
+
+/** Tests only: replace the deposit path's chain/venue calls. */
+let fundDeps: AsterFundDeps | undefined;
+export const setAsterFundDepsForTests = (d?: AsterFundDeps) => { fundDeps = d; };
 
 export async function execute(s: Snapshot, c: Candidate): Promise<StepResult[]> {
   const out: StepResult[] = [];
@@ -220,22 +203,32 @@ export async function execute(s: Snapshot, c: Candidate): Promise<StepResult[]> 
   }
 
   if (c.kind === 'hedge') {
-    const h = c.hedge!; const creds = await getLighterCreds(s.wallet, net);
+    const h = c.hedge!;
+    if ((h.venue ?? 'aster') !== 'aster') { out.push({ step: 'perps hedge order', status: 'failed', detail: 'this hedge is on a retired venue; nothing was sent' }); return out; }
+    const creds = await getAsterCreds(s.wallet, net);
     const mp = c.plan?.marginPlan;
-    if (mp && mp.moveUsd > 0) { if (!(await fundLighterMain(s, `${k}:margin`, creds, baseOfUsd(mp.moveUsd), [], out))) return out; }
-    const m = await lighter.getMarket(net, h.marketId);
-    const px = m.last_trade_price; const sell = h.deltaToShort > 0;
-    // Worst acceptable price: 2% through the last trade, in the direction that keeps the order fillable.
-    const worst = (px * (sell ? 0.98 : 1.02)).toFixed(m.price_decimals);
-    const before = lighter.positionsOf(await lighter.getAccount(net, creds.accountIndex))[h.marketId] ?? 0;
+    if (mp && mp.moveUsd > 0) { if ((await fundAster(s, `${k}:margin`, creds, { usdcBase: baseOfUsd(mp.moveUsd), usdtBase: 0n, sales: [] }, out, fundDeps)) === null) return out; }
+    const m = await aster.market(net, h.market);
+    const sell = h.deltaToShort > 0;
+    const before = (await aster.getPositions(net, creds))[h.market] ?? 0;
     const qtys = h.orderQtys && h.orderQtys.length > 1 ? h.orderQtys : [Math.abs(h.deltaToShort)];
+    // A trade the user asked for in chat may carry a leverage: set it on the market first (once; the venue refuses an invalid value).
+    if (c.chat && h.leverage && !h.reduceOnly) {
+      const lev = h.leverage;
+      if (!(await once(`${k}:leverage`, `Set ${h.market} leverage to ${lev}x`, async () => { await aster.setLeverage(net, creds, h.market, lev); return `${lev}x`; }, out))) return out;
+    }
     for (let i = 0; i < qtys.length; i++) {
-      const placed = await once(qtys.length > 1 ? `${k}:order${i}` : `${k}:order`, qtys.length > 1 ? `Lighter hedge order ${i + 1} of ${qtys.length}` : 'Lighter hedge order', async () => (await lighter.placeMarketOrder(net, creds, creds.accountIndex, { marketId: h.marketId, side: sell ? 'sell' : 'buy', size: qtys[i].toFixed(m.size_decimals), worstPrice: worst, reduceOnly: !sell })).txHash, out);
+      const sk = qtys.length > 1 ? `${k}:order${i}` : `${k}:order`;
+      const placed = await once(sk, qtys.length > 1 ? `Perps hedge order ${i + 1} of ${qtys.length}` : 'Perps hedge order', async () => {
+        // Agent hedges: a buy only ever closes a short. Chat trades: a buy opens a long unless the user asked to close.
+        const r = await aster.placeMarketOrder(net, creds, { ticker: h.market, side: sell ? 'sell' : 'buy', qty: qtys[i], reduceOnly: c.chat ? !!h.reduceOnly : !sell, clientOrderId: `pr${sk.replace(/[^A-Za-z0-9]/g, '').slice(-30)}` });
+        return `${r.orderId} ${r.status} ${r.executedQty}/${r.qty}${r.avgPrice ? ` at ${r.avgPrice}` : ''}`;
+      }, out);
       if (!placed) return out;
     }
     store.logNotional(s.wallet, net, c.notionalUsd ?? 0);
     const expected = before - h.deltaToShort;                     // short is negative: selling makes it more negative
-    const bad = await verifyPosition(net, creds, h.marketId, expected, Math.abs(h.deltaToShort) * 0.1 + 10 ** -m.size_decimals);
+    const bad = await verifyPosition(net, creds, h.market, expected, Math.abs(h.deltaToShort) * 0.1 + m.stepSize);
     out.push(bad ? { step: 'Check the position matches the plan', status: 'failed', detail: bad } : { step: 'Check the position matches the plan', status: 'done' });
     return out;
   }
@@ -243,21 +236,18 @@ export async function execute(s: Snapshot, c: Candidate): Promise<StepResult[]> 
   const rule = c.rule!; if (ruleKey(rule) !== c.ruleKey) throw new Error('candidate/rule mismatch');
   const amount = c.amountBaseUnit;
 
-  if (c.kind === 'top_up' && rule.venue === 'lighter') {
-    const creds = await getLighterCreds(s.wallet, net);
+  if (c.kind === 'top_up' && rule.venue === 'aster') {
+    if (rule.accountRef !== '') { out.push({ step: 'perps top-up', status: 'failed', detail: 'the perps venue has one account per wallet; nothing was moved' }); return out; }
+    const creds = await getAsterCreds(s.wallet, net);
     const sp = splitFunding(c);
     if (sp.usdcBase < 0n || sp.unsupported.length) { out.push({ step: 'plan funding', status: 'failed', detail: 'funding plan not supported' }); return out; }
-    const ok = await fundLighterMain(s, k, creds, sp.sales.length || sp.usdtBase > 0n ? sp.usdcBase : BigInt(amount), sp.sales, out, sp.usdtBase);
-    if (ok && rule.accountRef) {
-      await once(`${k}:sub`, 'Transfer main → sub-account', async () => (await lighter.transferToOwnAccount(net, creds, creds.accountIndex, Number(rule.accountRef), amount)).txHash, out);
-    }
+    await fundAster(s, k, creds, { usdcBase: sp.sales.length || sp.usdtBase > 0n ? sp.usdcBase : BigInt(amount), usdtBase: sp.usdtBase, sales: sp.sales }, out, fundDeps);
     return out;
   }
 
-  if (c.kind === 'release' && rule.venue === 'lighter') {
-    const creds = await getLighterCreds(s.wallet, net);
-    const acct = rule.accountRef === '' ? creds.accountIndex : Number(rule.accountRef);
-    await once(`${k}:withdraw`, 'Lighter secure withdraw', async () => (await lighter.withdrawToOwner(net, creds, acct, amount)).txHash, out);
+  if (c.kind === 'release' && rule.venue === 'aster') {
+    // The agent key has canWithdraw=false by design. Never attempt it.
+    out.push({ step: 'release perps margin', status: 'failed', detail: 'withdrawals from perps need your wallet signature in the app. Nothing was moved.' });
     return out;
   }
 

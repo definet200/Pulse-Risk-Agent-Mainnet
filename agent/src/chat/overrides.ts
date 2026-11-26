@@ -15,7 +15,7 @@ export const Overrides = z.object({
   events: z.array(z.object({ ticker: tk, hoursAhead: num(0.01, 720), gapPct: num(0.1, 80).optional() })).max(8).optional(),
   bnbUsdc: num(0, 1e9).optional(),
   deriveFreeUsd: num(0, 1e9).optional(),
-  lighterFreeUsd: num(0, 1e9).optional(),
+  perpFreeUsd: num(0, 1e9).optional(),
   holdingValueUsd: z.record(tk, num(0, 1e9)).optional(),
 });
 export type Overrides = z.infer<typeof Overrides>;
@@ -40,7 +40,7 @@ export function applyOverrides(base: Snapshot, ov: Overrides): { snapshot: Snaps
   }
   if (ov.bnbUsdc !== undefined) { s.bsc = { ...s.bsc, usdcUsd: ov.bnbUsdc }; applied.push(`BNB USDC $${ov.bnbUsdc}`); }
   if (ov.deriveFreeUsd !== undefined) { s.deriveFree = { ref: s.deriveFree?.ref ?? '0', freeUsd: ov.deriveFreeUsd }; applied.push(`Derive free $${ov.deriveFreeUsd}`); }
-  if (ov.lighterFreeUsd !== undefined) { s.lighterMain = { equityUsd: Math.max(s.lighterMain?.equityUsd ?? 0, ov.lighterFreeUsd), freeUsd: ov.lighterFreeUsd }; applied.push(`Lighter free $${ov.lighterFreeUsd}`); }
+  if (ov.perpFreeUsd !== undefined) { s.perpMain = { equityUsd: Math.max(s.perpMain?.equityUsd ?? 0, ov.perpFreeUsd), freeUsd: ov.perpFreeUsd }; applied.push(`perps free $${ov.perpFreeUsd}`); }
   for (const [t, v] of Object.entries(ov.holdingValueUsd ?? {})) {
     const b = s.bsc.bstocks.find((x) => x.symbol === `${t}B`);
     if (b) { b.value = v; applied.push(`${t} holding value $${v}`); }

@@ -18,9 +18,9 @@ export interface ProposalScenario {
 
 const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
 const H = (utilBps: number, accountUsd = 100) => ({ connected: true, utilBps, accountUsd, usedUsd: (accountUsd * utilBps) / 10_000 });
-const withHealth = (utilBps: number, accountUsd = 100): Partial<Snapshot> => ({ health: { 'lighter:': H(utilBps, accountUsd) } });
+const withHealth = (utilBps: number, accountUsd = 100): Partial<Snapshot> => ({ health: { 'aster:': H(utilBps, accountUsd) } });
 
-/** The Lighter rule from the fixture, with release switched on. */
+/** The perps rule from the fixture, with release switched on. */
 function releaseSnapshot(over: Partial<Snapshot> = {}): Snapshot {
   const s = fixtureSnapshot(over);
   s.config.rebalance.rules[0] = { ...s.config.rebalance.rules[0], releaseOn: true, releaseLevelBps: 2500, releaseForSec: 1800 };
@@ -28,48 +28,44 @@ function releaseSnapshot(over: Partial<Snapshot> = {}): Snapshot {
 }
 /** Hold 10 NVDAB ($2,000). NVDA moves 3.5% a day, so the 99% loss is 8.1% against a 5% limit: about 38% must be hedged. */
 function hedgeSnapshot(shortSize: number, held = 10, over: Partial<Snapshot> = {}): Snapshot {
-  const s = fixtureSnapshot({ health: { 'lighter:': H(5000) }, ...over });
-  s.config.hedge = { enabled: true, driftThresholdPct: 5, sizing: 'loss_limit', news: { enabled: false }, legs: [{ bstock: 'NVDAB', venue: 'lighter', kind: 'perp', market: 'NVDA', marketId: 110, hedgeRatio: 1 }] };
+  const s = fixtureSnapshot({ health: { 'aster:': H(5000) }, ...over });
+  s.config.hedge = { enabled: true, driftThresholdPct: 5, sizing: 'loss_limit', news: { enabled: false }, legs: [{ bstock: 'NVDAB', venue: 'aster', kind: 'perp', market: 'NVDA', hedgeRatio: 1 }] };
   s.config.risk = { ...s.config.risk, lossTolerancePct: 5 };
   s.bsc = { ...s.bsc, bstocks: [{ symbol: 'NVDAB', qty: held, value: held * 200, allowanceQty: held }] };
-  s.lighterPositions = shortSize ? { 110: -shortSize } : {};
+  s.perpPositions = shortSize ? { NVDA: -shortSize } : {};
   s.market = { sigmaDay: { NVDA: 0.035 }, at: new Date().toISOString() };
-  s.lighterMain = { equityUsd: 1000, freeUsd: 800 };
+  s.perpMain = { equityUsd: 1000, freeUsd: 800 };
   s.hedgeProblems = [];
-  s.bridgeEtaSec = 600;
+  s.perpEtaSec = 600;
   s.today = { notionalUsd: 0, lossUsd: 0, capitalOffBnbUsd: 1000, pausedReason: null };
   Object.assign(s, over);
   return s;
 }
 
 export const ACTION_SCENARIOS: ActionScenario[] = [
-  { name: 'top-up: utilization above trigger', describe: 'Lighter at 82% (trigger 70%), BNB wallet funded', snapshot: () => fixtureSnapshot(), expect: { outcome: 'simulated', kind: 'top_up', stepsInclude: /bridge/ } },
-  { name: 'idle: inside the band', describe: 'Lighter at 50%', snapshot: () => fixtureSnapshot(withHealth(5000)), expect: { outcome: 'idle' } },
+  { name: 'top-up: utilization above trigger', describe: 'Perps at 82% (trigger 70%), BNB wallet funded', snapshot: () => fixtureSnapshot(), expect: { outcome: 'simulated', kind: 'top_up', stepsInclude: /deposit the USDT/ } },
+  { name: 'idle: inside the band', describe: 'Perps at 50%', snapshot: () => fixtureSnapshot(withHealth(5000)), expect: { outcome: 'idle' } },
   { name: 'top-up: account-value mode', describe: 'Account value $40, floor $100', snapshot: () => {
-    const s = fixtureSnapshot({ health: { 'lighter:': { connected: true, utilBps: 3000, accountUsd: 40, usedUsd: 12 } } });
+    const s = fixtureSnapshot({ health: { 'aster:': { connected: true, utilBps: 3000, accountUsd: 40, usedUsd: 12 } } });
     s.config.rebalance.rules[0] = { ...s.config.rebalance.rules[0], mode: 'account_value', triggerBaseUnit: '100000000', targetBaseUnit: '150000000' };
     return s; }, expect: { outcome: 'simulated', kind: 'top_up' } },
-  { name: 'top-up: Lighter sub-account', describe: 'Rule on sub-account 7 adds a main → sub transfer step', snapshot: () => {
-    const s = fixtureSnapshot({ health: { 'lighter:7': H(8200) }, moved24hBase: { 'lighter:7': '0' } });
-    s.config.rebalance.rules[0] = { ...s.config.rebalance.rules[0], accountRef: '7' };
-    return s; }, expect: { outcome: 'simulated', kind: 'top_up', stepsInclude: /sub-account #7/ } },
   { name: 'top-up: Derive subaccount (dry run)', describe: 'Derive rule at 85%', snapshot: () => {
     const s = fixtureSnapshot({ health: { 'derive:42': H(8500) }, moved24hBase: { 'derive:42': '0' } });
     s.config.rebalance.rules[0] = { ...defaultRule('derive', '42'), triggerBps: 7000, targetBps: 4500 };
     return s; }, expect: { outcome: 'simulated', kind: 'top_up', stepsInclude: /depositToNewSubaccount/ } },
-  { name: 'release: surplus after the dwell time', describe: 'Utilization 10% for 2 h, release below 25% for 30 min', snapshot: () => releaseSnapshot({
-    health: { 'lighter:': H(1000, 200) }, ruleState: { 'lighter:': { releaseBelowSince: ago(2 * 3_600_000) } } }), expect: { outcome: 'simulated', kind: 'release', stepsInclude: /withdraw/i } },
+  { name: 'release: perps surplus is reported, never withdrawn', describe: 'Utilization 10% for 2 h, release below 25% for 30 min; the agent key cannot withdraw', snapshot: () => releaseSnapshot({
+    health: { 'aster:': H(1000, 200) }, ruleState: { 'aster:': { releaseBelowSince: ago(2 * 3_600_000) } } }), expect: { outcome: 'idle', rejected: /wallet signature/ } },
   { name: 'idle: release waits for the dwell time', describe: 'Utilization 10% for only 5 min', snapshot: () => releaseSnapshot({
-    health: { 'lighter:': H(1000, 200) }, ruleState: { 'lighter:': { releaseBelowSince: ago(5 * 60_000) } } }), expect: { outcome: 'idle' } },
+    health: { 'aster:': H(1000, 200) }, ruleState: { 'aster:': { releaseBelowSince: ago(5 * 60_000) } } }), expect: { outcome: 'idle' } },
   { name: 'idle: top-up already ran (run-once)', describe: 'topUpOnce set and done', snapshot: () => {
-    const s = fixtureSnapshot({ ruleState: { 'lighter:': { topUpDoneAt: ago(3_600_000) } } });
+    const s = fixtureSnapshot({ ruleState: { 'aster:': { topUpDoneAt: ago(3_600_000) } } });
     s.config.rebalance.rules[0] = { ...s.config.rebalance.rules[0], topUpOnce: true };
     return s; }, expect: { outcome: 'idle' } },
   { name: 'blocked: BNB wallet empty', describe: 'No USDC to pull', snapshot: () => fixtureSnapshot({ bsc: { usdcUsd: 0, usdtUsd: 0, bstocks: [], allowanceUsdcBase: '300000000' } }), expect: { outcome: 'idle', rejected: /BNB funds short/ } },
   { name: 'blocked: wallet only just above the reserve', describe: '$12 on BNB, reserve $10', snapshot: () => fixtureSnapshot({ bsc: { usdcUsd: 12, usdtUsd: 0, bstocks: [], allowanceUsdcBase: '300000000' } }), expect: { outcome: 'idle', rejected: /BNB funds short/ } },
   { name: 'blocked: above the on-chain allowance', describe: 'Allowance $1, need $82', snapshot: () => fixtureSnapshot({ bsc: { usdcUsd: 500, usdtUsd: 0, bstocks: [], allowanceUsdcBase: '1000000' } }), expect: { outcome: 'idle', rejected: /BNB funds short/ } },
-  { name: 'blocked: 24h cap reached', describe: 'Already moved $1,999.99 of a $2,000 cap', snapshot: () => fixtureSnapshot({ moved24hBase: { 'lighter:': '1999999999' } }), expect: { outcome: 'idle', rejected: /24h cap/ } },
-  { name: 'blocked: cooling down', describe: 'Last move 1 minute ago, cooldown 10 min', snapshot: () => fixtureSnapshot({ ruleState: { 'lighter:': { lastMoveAt: ago(60_000) } } }), expect: { outcome: 'idle', rejected: /cooling down/ } },
+  { name: 'blocked: 24h cap reached', describe: 'Already moved $1,999.99 of a $2,000 cap', snapshot: () => fixtureSnapshot({ moved24hBase: { 'aster:': '1999999999' } }), expect: { outcome: 'idle', rejected: /24h cap/ } },
+  { name: 'blocked: cooling down', describe: 'Last move 1 minute ago, cooldown 10 min', snapshot: () => fixtureSnapshot({ ruleState: { 'aster:': { lastMoveAt: ago(60_000) } } }), expect: { outcome: 'idle', rejected: /cooling down/ } },
   { name: 'blocked: automation switched off', describe: 'Master switch off', snapshot: () => { const s = fixtureSnapshot(); s.config.rebalance.enabled = false; return s; }, expect: { outcome: 'idle' } },
   { name: 'blocked: rule paused', describe: 'Rule disabled', snapshot: () => { const s = fixtureSnapshot(); s.config.rebalance.rules[0] = { ...s.config.rebalance.rules[0], enabled: false }; return s; }, expect: { outcome: 'idle' } },
   { name: 'sell: top-up funded by selling a bStock', describe: '$0 stables, 1 SPYB ($500) with an allowance to the agent', snapshot: () => {
@@ -95,7 +91,7 @@ export const ACTION_SCENARIOS: ActionScenario[] = [
     const s = fixtureSnapshot({ bsc: { usdcUsd: 0, usdtUsd: 500, bstocks: [], allowanceUsdcBase: '300000000' } });
     s.config.rebalance = { ...s.config.rebalance, sources: ['bsc_usdt'] };
     return s; }, expect: { outcome: 'idle', rejected: /BNB funds short/ } },
-  { name: 'fail closed: Lighter account unreadable', describe: 'Venue read failed', snapshot: () => fixtureSnapshot({ dataQuality: ['lighter main account unreadable: HTTP 404'] }), expect: { outcome: 'error' } },
+  { name: 'fail closed: perps account unreadable', describe: 'Venue read failed', snapshot: () => fixtureSnapshot({ dataQuality: ['perps account unreadable: HTTP 404'] }), expect: { outcome: 'error' } },
   { name: 'fail closed: no price for a bStock', describe: 'Price missing', snapshot: () => fixtureSnapshot({ dataQuality: ['no price for NVDAB'] }), expect: { outcome: 'error' } },
   { name: 'fail closed: BNB balances unreadable', describe: 'RPC down', snapshot: () => fixtureSnapshot({ dataQuality: ['BNB balances unreadable: timeout'] }), expect: { outcome: 'error' } },
   { name: 'hedge: sized from the loss limit (no hedge yet)', describe: '$2,000 NVDAB, 99% loss 8.1% vs 5% limit: hedge about 38%', snapshot: () => hedgeSnapshot(0), expect: { outcome: 'simulated', kind: 'hedge', stepsInclude: /sell [\d.]+ NVDA/ } },
@@ -111,11 +107,11 @@ export const ACTION_SCENARIOS: ActionScenario[] = [
   { name: 'hedge: trimmed to what is left of the daily limit', describe: '$19,900 already hedged today of $20,000', snapshot: () => { const s = hedgeSnapshot(0); s.today = { notionalUsd: 19_900, lossUsd: 0, capitalOffBnbUsd: 1000, pausedReason: null }; return s; }, expect: { outcome: 'simulated', kind: 'hedge', stepsInclude: /sell 0\.5 NVDA/ } },
   { name: 'hedge: daily notional limit used up', describe: '$20,000 already hedged today', snapshot: () => { const s = hedgeSnapshot(0); s.today = { notionalUsd: 20_000, lossUsd: 0, capitalOffBnbUsd: 1000, pausedReason: null }; return s; }, expect: { outcome: 'idle', rejected: /used up/ } },
   { name: 'hedge: agent paused by the anomaly stop', describe: 'Paused for limit probing', snapshot: () => { const s = hedgeSnapshot(0); s.today = { notionalUsd: 0, lossUsd: 0, capitalOffBnbUsd: 1000, pausedReason: '6 refusals in 10 minutes looks like limit probing' }; return s; }, expect: { outcome: 'idle', rejected: /paused/ } },
-  { name: 'hedge: no margin on Lighter and a slow bridge', describe: 'Earnings in 10 min, bridge 25 min, $0 free margin', snapshot: () => {
-    const s = hedgeSnapshot(0); s.lighterMain = { equityUsd: 0, freeUsd: 0 }; s.bridgeEtaSec = 1500;
-    s.config.events = [{ ticker: 'NVDA', at: new Date(Date.now() + 10 * 60_000).toISOString(), kind: 'earnings', gapPct: 12 }]; return s; }, expect: { outcome: 'idle', rejected: /bridge/ } },
-  { name: 'hedge: needs margin, bridge is fast enough', describe: 'No free margin, 10 min bridge, no event: moves margin first', snapshot: () => {
-    const s = hedgeSnapshot(0); s.lighterMain = { equityUsd: 0, freeUsd: 0 }; return s; }, expect: { outcome: 'simulated', kind: 'hedge', stepsInclude: /bridge/ } },
+  { name: 'hedge: no perps margin and a slow deposit', describe: 'Earnings in 10 min, deposit 25 min, $0 free margin', snapshot: () => {
+    const s = hedgeSnapshot(0); s.perpMain = { equityUsd: 0, freeUsd: 0 }; s.perpEtaSec = 1500;
+    s.config.events = [{ ticker: 'NVDA', at: new Date(Date.now() + 10 * 60_000).toISOString(), kind: 'earnings', gapPct: 12 }]; return s; }, expect: { outcome: 'idle', rejected: /deposit time/ } },
+  { name: 'hedge: needs margin, deposit is fast enough', describe: 'No free margin, 10 min deposit, no event: moves margin first', snapshot: () => {
+    const s = hedgeSnapshot(0); s.perpMain = { equityUsd: 0, freeUsd: 0 }; return s; }, expect: { outcome: 'simulated', kind: 'hedge', stepsInclude: /deposit the USDT/ } },
   { name: 'hedge: switched off', describe: 'Hedge disabled', snapshot: () => { const s = hedgeSnapshot(0); s.config.hedge.enabled = false; return s; }, expect: { outcome: 'idle' } },
 ];
 

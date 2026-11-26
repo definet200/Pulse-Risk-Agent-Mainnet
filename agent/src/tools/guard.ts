@@ -1,9 +1,10 @@
-import { MIN_COOLDOWN_SEC, MIN_DEPOSIT_BASE_UNIT, ruleKey } from '../../../lib/risk-rules';
+import { ruleKey } from '../../../lib/risk-rules';
 import { policyCheck } from '../policy';
 import type { Candidate, RejectedCandidate, Snapshot } from '../types';
 import { splitFunding } from './funding';
 import { legInConfig } from './hedgeLeg';
 import { isLocked } from './store';
+import { ACTIVE_RULE_VENUES, minCooldownSec, minDepositBase } from './venueRules';
 
 // Hard safety checks in code. The LLM can never loosen these: every candidate passes through here before the
 // LLM sees it, and the chosen one is re-checked right before execution. Returns a reason string or null.
@@ -54,14 +55,15 @@ export function checkCandidate(c: Candidate, s: Snapshot, now = new Date()): str
   if (!s.config.rebalance.enabled) return 'automation is off';
   const rule = s.config.rebalance.rules.find((r) => ruleKey(r) === c.ruleKey);
   if (!rule || !rule.enabled) return 'rule missing or paused';
+  if (!ACTIVE_RULE_VENUES.has(rule.venue)) return 'this venue is retired: set the rule on the perps account instead';
   const amt = BigInt(c.amountBaseUnit);
   if (amt <= 0n) return 'amount must be positive';
-  if (amt < BigInt(rule.minMoveBaseUnit) || amt < BigInt(MIN_DEPOSIT_BASE_UNIT[rule.venue])) return 'below the minimum move';
+  if (amt < BigInt(rule.minMoveBaseUnit) || amt < minDepositBase(rule.venue)) return 'below the minimum move';
   if (amt > BigInt(rule.maxPerMoveBaseUnit)) return 'above the per-move cap';
   const moved = BigInt(s.moved24hBase[c.ruleKey!] ?? '0');
   if (moved + amt > BigInt(rule.dailyCapBaseUnit)) return 'daily cap reached: this move would exceed the 24h cap';
   const st = s.ruleState[c.ruleKey!] ?? {};
-  const cool = Math.max(rule.cooldownSec, MIN_COOLDOWN_SEC[rule.venue]) * 1000;
+  const cool = Math.max(rule.cooldownSec, minCooldownSec(rule.venue)) * 1000;
   if (st.lastMoveAt && now.getTime() - Date.parse(st.lastMoveAt) < cool) return 'cooling down after the last move';
   if (isLocked(`${s.wallet.toLowerCase()}:${s.network}:${c.ruleKey}`, now.getTime())) return 'a move for this rule is already in flight';
   if (c.kind === 'top_up') return fundingProblem(s, c);
