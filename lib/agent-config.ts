@@ -143,6 +143,12 @@ const AgentConfigBase = z.object({
     /** Haircut applied to a bStock's value when counting what selling it yields (0.3 = 30% off). */
     bstockHaircut: z.number().min(0).max(0.9),
   }),
+  /**
+   * Price integrity for bStock collateral (Atlas oracle + CoinMarketCap DEX + the stock's perp). ON by default.
+   * OFF = exactly the behaviour from before this existed: flat haircut, no price checks, nothing blocked. The one-click
+   * way back if a data source misbehaves (for example in a live demo). A saved config without this key means ON.
+   */
+  integrity: z.object({ enabled: z.boolean() }).default({ enabled: true }),
   /** When the agent checks this wallet: automatically every 30 s, or only when you press Run now. Approved requests always run. */
   schedule: z.object({
     auto: z.boolean(),
@@ -199,6 +205,7 @@ export const DEFAULT_CONFIG: AgentConfig = {
   },
   collateral: { bstockHaircut: 0.3 },
   schedule: { auto: true, runNowAt: null },
+  integrity: { enabled: true },
 };
 
 /** Agent-written runtime state for one rule (dwell timers, run-once markers, last outcome). */

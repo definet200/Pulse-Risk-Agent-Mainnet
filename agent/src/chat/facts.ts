@@ -1,6 +1,7 @@
 import { assessRisk } from '../risk/plan';
 import { buildStatus } from '../status';
 import type { Snapshot } from '../types';
+import { integrityFacts } from '../tools/integrity';
 import type { WhatIfResult } from './whatif';
 
 // The facts the chat may use, and the whole portfolio picture it always gets. Code builds every one from the snapshot, the app's recorded
@@ -46,6 +47,7 @@ export function buildFacts(s: Snapshot, rec: Recorded, whatIf: { applied: string
   add('Margin funding', `order: ${cfg.rebalance.sources.join(', ') || 'none'}; bStocks the agent may sell: ${cfg.rebalance.sellOrder.join(', ') || 'none'}; bStock haircut ${Math.round(cfg.collateral.bstockHaircut * 100)}%; margin automation ${cfg.rebalance.enabled ? 'on' : 'off'}`);
   add('Your limits', `max ${usd(lim.maxNotionalPerTradeUsd)} per trade and ${usd(lim.maxNotionalPerDayUsd)} per day; max leverage ${lim.maxLeverage}x; daily loss cap ${usd(lim.dailyLossCapUsd)}; max capital off BNB ${usd(lim.maxCapitalOffBnbUsd)}; autonomy ${lim.autonomyExpiresAt ? `until ${lim.autonomyExpiresAt.slice(0, 16).replace('T', ' ')} UTC` : 'not granted'}`);
   add('Used today', `traded ${usd(st.limitsUsed.notionalTodayUsd)} of ${usd(st.limitsUsed.maxNotionalPerDayUsd)}; loss ${usd(st.limitsUsed.lossTodayUsd)} of ${usd(st.limitsUsed.dailyLossCapUsd)} cap; off BNB ${usd(st.limitsUsed.capitalOffBnbUsd)} of ${usd(st.limitsUsed.maxCapitalOffBnbUsd)}`);
+  for (const x of integrityFacts(s)) add(x.label, x.value);
   for (const a of st.alerts.slice(0, 5)) add('Alert', a);
   for (const n of st.newsFlags.slice(0, 4)) add(`News flag ${n.ticker}`, `${n.sentiment} (score ${n.score}, confidence ${n.confidence}), advisory only: ${n.reason}`);
   for (const a of rec.actions.slice(0, 6)) add(`Recorded request #${a.id}`, `${a.status} on ${when(a.created_at)}: ${a.title}. Why: ${a.why.slice(0, 320)}${a.result_message ? ` Result: ${a.result_message.slice(0, 180)}` : ''}`);

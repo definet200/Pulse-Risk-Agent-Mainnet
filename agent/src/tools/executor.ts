@@ -9,6 +9,7 @@ import * as funding from './deriveFunding';
 import { SELL_BUFFER, splitFunding, type SaleLeg } from './funding';
 import * as pancake from './pancake';
 import * as store from './store';
+import { haircutFor } from './integrity';
 import { asterSymbol } from '../../../lib/aster';
 import type { Candidate, Snapshot, StepResult } from '../types';
 
@@ -25,7 +26,7 @@ function fundingSteps(s: Snapshot, c: Pick<Candidate, 'amountBaseUnit' | 'fundin
   const sp = splitFunding(c); const amt = usd(c.amountBaseUnit); const steps: string[] = [];
   if (sp.usdtBase > 0n) steps.push(`pull ${usd(sp.usdtBase.toString())} USDT from the user's BNB wallet, then swap it to USDC on PancakeSwap (0.01% pool, 0.5% max slippage)`);
   if (sp.usdcBase > 0n || (!sp.sales.length && sp.usdtBase === 0n)) steps.push(`pull ${usd((sp.usdcBase > 0n ? sp.usdcBase : BigInt(c.amountBaseUnit)).toString())} USDC from the user's BNB wallet via the on-chain allowance`);
-  for (const l of sp.sales) steps.push(`pull ~$${((l.usd / (1 - s.config.collateral.bstockHaircut)) * SELL_BUFFER).toFixed(2)} of ${l.symbol} from the user's BNB wallet via the on-chain allowance, then sell it for USDC on PancakeSwap V3 (1% max slippage; a sale is final)`);
+  for (const l of sp.sales) steps.push(`pull ~$${((l.usd / (1 - haircutFor(s, l.symbol))) * SELL_BUFFER).toFixed(2)} of ${l.symbol} from the user's BNB wallet via the on-chain allowance, then sell it for USDC on PancakeSwap V3 (1% max slippage; a sale is final)`);
   steps.push(`bridge ${amt} BSC USDC → ${dest} via Relay (validate quote first)`);
   return steps;
 }
@@ -95,7 +96,7 @@ async function collectOnAgent(s: Snapshot, k: string, usdcBase: bigint, sales: S
     const h = s.bsc.bstocks.find((b) => b.symbol === leg.symbol);
     if (!h || h.qty <= 0 || h.value <= 0) { out.push({ step: `sell ${leg.symbol}`, status: 'failed', detail: `${leg.symbol} is not held` }); return null; }
     // Sell enough that the value after the haircut covers the cash needed, plus a small buffer for slippage.
-    const qty = Math.min(h.qty, h.allowanceQty ?? h.qty, (leg.usd / (1 - s.config.collateral.bstockHaircut)) * SELL_BUFFER / (h.value / h.qty));
+    const qty = Math.min(h.qty, h.allowanceQty ?? h.qty, (leg.usd / (1 - haircutFor(s, leg.symbol))) * SELL_BUFFER / (h.value / h.qty));
     if (!(qty > 0)) { out.push({ step: `sell ${leg.symbol}`, status: 'failed', detail: 'nothing to sell' }); return null; }
     const raw = await bsc.rawForUi(leg.symbol, qty);
     if (!(await once(`${k}:${leg.symbol}:pullb`, `Pull ${leg.symbol} from user wallet`, async () => (await bsc.pullBstock(leg.symbol, s.wallet, raw)).txHash, out))) return null;

@@ -2,6 +2,7 @@ import type { AgentConfig } from '../../lib/agent-config';
 import type { AccountHealth, RiskRule, RuleState } from '../../lib/risk-rules';
 import type { HedgePlanView } from '../../lib/agent-action';
 import type { OptionChain } from './risk/options';
+import type { Assessment } from '../../lib/integrity';
 
 export type Network = 'mainnet' | 'testnet';
 
@@ -68,6 +69,10 @@ export interface Snapshot {
   perpEtaSec?: number;
   /** The perps (Aster) account that carries the hedges. */
   perpMain?: { equityUsd: number; freeUsd: number };
+  /** Whether the price-integrity layer is on for this snapshot (config.integrity.enabled). Off = nothing below is set and nothing is fetched. */
+  integrityEnabled?: boolean;
+  /** One assessment per held/relevant bStock (only when the layer is on and at least one read worked). */
+  integrity?: { at: number; items: Assessment[] };
   /** Running totals the policy engine checks (today's notional, today's loss, capital parked off BNB). */
   today?: TodayStats;
 }

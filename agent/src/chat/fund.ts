@@ -4,6 +4,7 @@ import { ruleKey, type RiskRule } from '../../../lib/risk-rules';
 import { minDepositBase } from '../tools/venueRules';
 import type { ActionPost } from '../tools/appApi';
 import type { Candidate, Snapshot } from '../types';
+import { haircutArg } from '../tools/integrity';
 
 // Funds the user asks to move between their BNB wallet and a venue account in the chat ("add $500 to my perps account", "send $300 of idle margin back").
 // Same as every other chat action: the chat only posts a request, nothing moves until Approve, and on approval the live agent rebuilds the move
@@ -44,7 +45,7 @@ export function fundCandidate(s: Snapshot, spec: ChatFundSpec, key: string): { c
   }
   if (amt < minDepositBase(venue)) return { c: null, problem: `${venue === 'aster' ? 'Perps' : 'Derive'} needs at least ${usdText(minDepositBase(venue).toString())} per deposit` };
   const cfg = s.config; const reserveUsd = Number(BigInt(cfg.rebalance.keepBscReserveBaseUnit)) / 1e6; const allowUsd = Number(BigInt(s.bsc.allowanceUsdcBase)) / 1e6; const allowUsdtUsd = Number(BigInt(s.bsc.allowanceUsdtBase ?? '0')) / 1e6;
-  const fp = planFunding(spec.amountBaseUnit, { bscUsdc: Math.min(s.bsc.usdcUsd, allowUsd + reserveUsd), bscUsdt: Math.min(s.bsc.usdtUsd, allowUsdtUsd + Math.max(0, reserveUsd - s.bsc.usdcUsd)), bstocks: [] }, cfg.rebalance, cfg.collateral.bstockHaircut);
+  const fp = planFunding(spec.amountBaseUnit, { bscUsdc: Math.min(s.bsc.usdcUsd, allowUsd + reserveUsd), bscUsdt: Math.min(s.bsc.usdtUsd, allowUsdtUsd + Math.max(0, reserveUsd - s.bsc.usdcUsd)), bstocks: [] }, cfg.rebalance, haircutArg(s));
   if (fp.shortfallUsd > 0) return { c: null, problem: `your BNB wallet cash is short by $${fp.shortfallUsd} (USDC/USDT you allowed the agent to use, after the $${reserveUsd} it keeps back). The chat does not sell your bStocks to fund a move` };
   if (fp.sources.some((x) => x.source.startsWith('sell'))) return { c: null, problem: 'this would need selling bStocks, which the chat does not do' };
   return { c: { ...base, id: `chat-fund:top_up:${spec.ruleKey}:${spec.amountBaseUnit}`, kind: 'top_up', reason: `You asked in the chat: add ${usdText(spec.amountBaseUnit)} to ${spec.label}`, funding: fp.sources,

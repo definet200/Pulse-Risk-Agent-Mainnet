@@ -3,12 +3,16 @@ import Link from 'next/link';
 import clsx from 'clsx';
 import { useBStockTickers } from '@/lib/hooks/useBStockTickers';
 import { usePortfolio, DEFAULT_HAIRCUT } from '@/lib/hooks/usePortfolio';
+import { useIntegrity } from '@/lib/hooks/useIntegrity';
+import { IntegrityDots } from '@/components/risk/PriceIntegrity';
 import { MIN_LIQUIDITY_USD } from '@/lib/bstocks';
+import { venueWords } from '@/lib/venue-words';
 import { fmtNum, fmtPct, fmtUsd } from '@/lib/format';
 
 export default function CollateralPage() {
   const tickers = useBStockTickers();
   const p = usePortfolio(DEFAULT_HAIRCUT);
+  const integ = useIntegrity();
   const venueMargin = (p.perps.equity ?? 0) + (p.derive.equity ?? 0);
   const stables = (p.bsc.usdc ?? 0) + (p.bsc.usdt ?? 0);
   return (
@@ -26,6 +30,7 @@ export default function CollateralPage() {
           <Stat k="Stables on BNB" v={fmtUsd(stables)} />
           <Stat k="Margin on venues" v={fmtUsd(venueMargin)} />
         </div>
+        {integ.enabled && integ.items.length > 0 && <div className="mt-4"><div className="label mb-1">Price integrity</div><IntegrityDots items={integ.items} /></div>}
         <div className="mt-4 text-sm">Total buying-power reserve: <span className="num text-accent">{fmtUsd(p.stocksCollateral + stables)}</span> <Link href="/automation" className="ml-2 text-xs text-accent underline">Configure the rebalance rules →</Link></div>
       </div>
       <div className="panel p-4">
@@ -39,7 +44,7 @@ export default function CollateralPage() {
                   <td className="td font-medium">{t.symbol}</td><td className="td text-muted">{t.name}</td><td className="td">{fmtNum(t.price)}</td>
                   <td className={clsx('td', (t.changePct ?? 0) >= 0 ? 'text-up' : 'text-down')}>{fmtPct(t.changePct)}</td>
                   <td className={clsx('td', t.liquidityUsd < MIN_LIQUIDITY_USD && 'text-muted')}>{fmtUsd(t.liquidityUsd, 0)}{t.liquidityUsd < MIN_LIQUIDITY_USD && ' · thin'}</td>
-                  <td className="td">{mine ? fmtNum(mine.qty, 4) : '—'}</td><td className="td text-accent">{mine ? fmtUsd(mine.collateral) : '—'}</td>
+                  <td className="td">{mine ? fmtNum(mine.qty, 4) : '—'}</td><td className="td text-accent">{mine ? fmtUsd(mine.collateral) : '—'}{mine && mine.haircutUsed > DEFAULT_HAIRCUT && <div className="text-[10px] text-muted" title={integ.bySymbol[t.symbol]?.reasons[0]}>haircut {Math.round(mine.haircutUsed * 100)}% (+{Math.round((mine.haircutUsed - DEFAULT_HAIRCUT) * 100)} pts){integ.bySymbol[t.symbol]?.reasons[0] ? `: ${venueWords(integ.bySymbol[t.symbol].reasons[0])}` : ''}</div>}</td>
                   <td className="td text-right"><Link className="text-xs text-accent" href={`/trade/spot/${t.symbol}`}>Trade</Link></td>
                 </tr>
               );
