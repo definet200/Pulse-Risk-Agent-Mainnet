@@ -19,12 +19,10 @@ can be trusted before it acts.
    feed degraded: haircut 33%, never below the user's own). Explain BLOCK: stale feed, a >4% gap or a pool under $100k stops
    hedges and top-ups on that token, with the reason in plain words.
 4. **It acts on it (30 s).** Collateral page: haircut raised on the WATCH token. Ask Pulse: "Can I trust the price of
-   NVDAB?" It answers from the live data. If a market-data key is set: "Is there an event before I hedge NVDA?" reads the
+   NVDAB?" It answers from the live data. "Is there an event before I hedge NVDA?" reads the
    stock event calendar.
 5. **Safe by design (20 s).** The agent key can trade perps but never withdraw. The layer fails open: if fewer than two
    sources answer, nothing is blocked because of our own outage. One switch turns it off.
-6. **On-chain (15 s, only if deployed).** PriceIntegrityGuard runs the same checks on BNB Chain so other contracts can
-   refuse a bad bStock price. Today it is written and tested, not deployed: say so.
 
 ## Answers to likely questions
 - *Why not trust one oracle alone?* Some stock feeds are marked degraded; the check is a second opinion, not a replacement.
@@ -33,7 +31,3 @@ can be trusted before it acts.
 - *Does the haircut ever go below the user's setting?* No. It only adds.
 - *Which tokens have an oracle feed?* NVDAB, MSTRB, SPYB, QQQB and TSLAB. Other tokens are checked against DEX data, the
   perp and the app's own price.
-
-## Not claimed
-- The guard contract is not deployed; no oracle push-feed address is verified.
-- The event-calendar tool needs a market-data key to work.

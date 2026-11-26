@@ -162,17 +162,7 @@ and the reason) with an **Enabled** switch.
 ## CoinMarketCap in chat
 
 Beyond prices, the chat agent can read live CoinMarketCap data through its MCP server: the next 7 days of scheduled
-events for a US stock (earnings and the like), a whole-crypto-market overview, and a derivatives overview. It needs a
-CoinMarketCap key and says so plainly when one is missing.
-
----
-
-## On-chain guard (not deployed)
-
-`contracts/PriceIntegrityGuard.sol` runs the same freshness and deviation check on BNB Chain, so other contracts can call
-`isTrusted(token)` before accepting a bStock. It holds no funds and `check` never reverts. It is **written and tested
-(14 Foundry tests, including fuzzing) but not deployed**, and no oracle push-feed address for a BNB bStock has been
-verified.
+events for a US stock (earnings and the like), a whole-crypto-market overview, and a derivatives overview.
 
 ---
 
@@ -191,22 +181,13 @@ Then open http://localhost:3100, connect, and go to **Risk management** to see t
 
 | Variable | Where | Needed | Purpose |
 |---|---|---|---|
-| `ATLAS_API_KEY` | app and agent | optional | Atlas pull API key. Without it the Atlas view is skipped and the other views still run |
-| `CMC_API_KEY` | agent | optional | CoinMarketCap MCP key for the stock-event and market tools |
+| `ATLAS_API_KEY` | app and agent | for the Atlas view | Atlas pull API key |
+| `CMC_API_KEY` | agent | for the CoinMarketCap tools | CoinMarketCap MCP key for the stock-event and market tools |
 | `SESSION_SECRET`, `KEYSTORE_SECRET`, `AGENT_API_TOKEN` | app and agent | yes | Generate each with `openssl rand -hex 32` |
 
 ```bash
 npm test                              # app, includes the integrity tests
 cd agent && npm test                  # agent
-cd contracts && forge test            # guard contract (needs Foundry)
 ```
 
----
-
-## Limits
-
-- Atlas coverage is five confirmed feeds; other tokens use three views.
-- The guard contract is not deployed.
-- The CoinMarketCap tools need a key and read three fixed data sets.
-
-More: [demo script](docs/DEMO.md) · [guard contract](contracts/README.md)
+More: [demo script](docs/DEMO.md)

@@ -166,8 +166,8 @@ the Funding page. The agent starts as a **dry run**: it sends nothing until you 
 | `AGENT_BSC_PRIVATE_KEY` | agent | for live mode | The agent's own gas wallet on BNB Chain (about 0.002 BNB). Never your main wallet |
 | `OPENROUTER_API_KEY` | agent | for chat and analysis | The language model |
 | `RELAY_API_KEY` | app and agent | for bridging to Derive | Bridge API key |
-| `ATLAS_API_KEY` | app and agent | optional | Atlas oracle key for the price checks |
-| `CMC_API_KEY` | agent | optional | CoinMarketCap key for the chat's stock events and market data |
+| `ATLAS_API_KEY` | app and agent | for the price checks | Atlas oracle key |
+| `CMC_API_KEY` | agent | for the chat's CoinMarketCap data | CoinMarketCap key for stock events and market data |
 
 ```bash
 npm test                    # app

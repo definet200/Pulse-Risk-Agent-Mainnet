@@ -17,8 +17,3 @@ next-env.d.ts
 **/data/*.db*
 .DS_Store
 *.key
-
-# Foundry (contracts/): build output and the forge-std dependency (install with `forge install foundry-rs/forge-std`)
-contracts/out/
-contracts/cache/
-contracts/lib/
