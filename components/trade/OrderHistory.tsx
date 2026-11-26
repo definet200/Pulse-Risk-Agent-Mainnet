@@ -4,7 +4,7 @@ import clsx from 'clsx';
 import { useVenueNetwork } from '@/lib/network';
 import { useSession } from '@/lib/session';
 import { getJson } from '@/lib/hooks/useVenues';
-import { shortHash, statusLabel, txUrl, type HistoryRow, type HistoryVenue } from '@/lib/order-history';
+import { settlementLabel, shortHash, statusLabel, txUrl, type HistoryRow, type HistoryVenue } from '@/lib/order-history';
 
 const VENUE_LABEL: Record<HistoryVenue, string> = { lighter: 'Perps', derive: 'Options', bstocks: 'bStocks' };
 const num = (s: string | null, max = 6) => (s === null || s === '' ? '—' : Number(s).toLocaleString('en-US', { maximumFractionDigits: max }));
@@ -59,7 +59,12 @@ export function OrderHistory({ venues, limit = 30, showVenue = false }: { venues
                         {r.txHash ? (() => { const u = txUrl(r.venue, r.txHash, network); return u
                           ? <a className="text-accent underline" target="_blank" rel="noreferrer" href={u} title={r.txHash}>{shortHash(r.txHash)} ↗</a>
                           : <span className="text-muted" title={r.txHash}>{shortHash(r.txHash)}</span>; })()
-                          : <span className="text-muted">{r.venue === 'derive' && Number(r.filled) > 0 ? 'settling' : '—'}</span>}
+                          : r.venue === 'derive' && Number(r.filled) > 0
+                            ? <span className="text-muted" title={r.tradeId ? `Trade ${r.tradeId}. The on-chain hash appears here once the settlement batch is posted.` : 'The on-chain hash appears here once the settlement batch is posted.'}>
+                                <span className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />{settlementLabel(r.settlement)}</span>
+                                {r.tradeId && <button type="button" onClick={() => void navigator.clipboard?.writeText(r.tradeId!)} className="block text-[10px] text-muted hover:text-white" title="Copy trade id">trade {r.tradeId.slice(0, 8)}…</button>}
+                              </span>
+                            : <span className="text-muted">—</span>}
                       </td>
                     </tr>
                   );
