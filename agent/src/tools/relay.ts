@@ -1,11 +1,11 @@
 import { createWalletClient, decodeFunctionData, getAddress, http, parseAbi, type Address, type Hex } from 'viem';
 import { bsc } from 'viem/chains';
 import { BSC_USDC } from '../../../lib/bsc';
-import { RELAY_API, RELAY_LIGHTER_CHAIN_ID } from '../../../lib/venues';
+import { RELAY_API } from '../../../lib/venues';
 import { config } from '../config';
 import { agentAccount, publicClient } from './bsc';
 
-// Relay bridge (BSC USDC → Lighter). Quote and status are read-only. executeSteps signs and sends
+// Relay bridge client. Quote and status are read-only. executeSteps signs and sends
 // only after validateQuote passes, and only when config().live is true. Ported from app/api/relay/quote/route.ts.
 
 const DEPOSITORY = '0x4cd00e387622c35bddb9b4c962c136462338bc31';
@@ -26,25 +26,12 @@ interface RelayResp {
 export interface QuoteReq {
   /** The agent's BSC address: it holds the funds after the pull and is the depositor. */
   depositor: Address;
-  /** Lighter main account index as a string (Relay's Lighter chain takes the index, not an address). */
+  /** Destination recipient the quote must be addressed to. */
   recipientAccountIndex: string;
   /** Amount in 18-dp wei of `token` (BSC USDC and USDT are both 18 dp). */
   amountWei: bigint;
   /** Token being bridged. Defaults to BSC USDC; BSC USDT is used after selling bStocks. */
   token?: Address;
-}
-
-export async function getQuote(q: QuoteReq): Promise<RelayResp> {
-  const c = config();
-  const res = await fetch(`${RELAY_API}/quote/v2`, {
-    method: 'POST', signal: AbortSignal.timeout(15_000),
-    headers: { 'content-type': 'application/json', ...(c.RELAY_API_KEY ? { 'x-api-key': c.RELAY_API_KEY } : {}) },
-    body: JSON.stringify({ user: q.depositor, recipient: q.recipientAccountIndex, originChainId: 56, destinationChainId: RELAY_LIGHTER_CHAIN_ID,
-      originCurrency: q.token ?? BSC_USDC, destinationCurrency: '0', amount: q.amountWei.toString(), tradeType: 'EXACT_INPUT', slippageTolerance: '50', refundTo: q.depositor }),
-  });
-  const j = (await res.json().catch(() => ({}))) as RelayResp;
-  if (!res.ok || !j.steps) throw new Error(`Relay: ${j.message ?? j.errorCode ?? res.status}`);
-  return j;
 }
 
 /** Throws unless every step is exactly approve(token→router) / depositErc20(depositor, token, amount) on BSC. */

@@ -3,6 +3,7 @@ import { tickerOf } from '../risk/market';
 import { chatTradeRequest, quoteSpec, specFrom } from './trade';
 import { describeSubs, managerFor, moveProblems, moveRequest, resolveSub, subLabel, usdcOf, freeOf, type ChatMoveSpec } from './move';
 import { deriveUniverses, listSubaccounts } from '../tools/derive';
+import { perpMarketItems, perpsAccountItems } from './perps';
 import { fundCandidate, fundRequest, resolveRule, ruleLabel, toBase, type ChatFundSpec } from './fund';
 import { ruleKey } from '../../../lib/risk-rules';
 import { checkCandidate } from '../tools/guard';
@@ -245,6 +246,29 @@ function makeTools(ctx: Ctx): StructuredToolInterface[] {
       } catch (e) { items.push({ label: 'Derive currencies', value: `could not be read just now (${e instanceof Error ? e.message : String(e)})` }); }
       return ok(ctx, items, 'Read live from the perps and options public APIs just now.');
     }, { name: 'get_venue_tickers', description: 'List what is actually tradeable right now on perps (perp markets, e.g. NVDAUSDT) and Derive (option underlyings), read live from both venues. Pass tickers to check specific ones (for example NVDA, XAU, ETH); omit to list everything. Use it when the user asks which tickers or markets exist, or before saying a hedge market is unavailable: never claim a ticker is missing without checking here.', schema: z.object({ tickers: z.array(z.string().max(10)).max(12).optional() }) }),
+
+    tool(async () => {
+      ctx.steps.push({ tool: 'get_perps_account', label: 'Read your perps account' });
+      try {
+        const creds = await getAsterCreds(ctx.req.wallet, ctx.req.network);
+        const view = await withTimeout(asterTools.getAccount(ctx.req.network, creds), 15_000, 'perps');
+        const orders = view.funded ? await withTimeout(asterTools.openOrders(ctx.req.network, creds), 15_000, 'perps') : [];
+        return ok(ctx, perpsAccountItems(view, orders), 'Read live from the perps account just now.');
+      } catch (e) { return ok(ctx, [{ label: 'Perps account', value: `could not be read just now (${e instanceof Error ? e.message : String(e)}). Nothing was changed.` }]); }
+    }, { name: 'get_perps_account', description: "Read the user's perps account live: equity, free margin, unrealised profit and loss, each open position (side, size, entry, mark, leverage, liquidation price) and open orders. Use it for 'what are my perps positions', 'how much margin is free', 'how close am I to liquidation', 'what is my leverage'. A never-funded account reads as $0 with no positions.", schema: z.object({}) }),
+
+    tool(async ({ ticker }: { ticker: string }) => {
+      const t = ticker.toUpperCase().replace(/B$/, '').replace(/USDT$/, '').replace(/-PERP$/, '');
+      ctx.steps.push({ tool: 'get_perp_market', label: `Looked up the ${t} perp` });
+      try {
+        const net = ctx.req.network;
+        const m = await withTimeout(asterTools.market(net, t), 12_000, 'perps');
+        const st = await withTimeout(asterTools.marketStats(net, t), 12_000, 'perps').catch(() => null);
+        let maxLev: number | null = null;
+        try { maxLev = await withTimeout(asterTools.maxLeverage(net, await getAsterCreds(ctx.req.wallet, net), t), 12_000, 'perps'); } catch { /* the leverage cap needs the user's key; leave it out */ }
+        return ok(ctx, perpMarketItems(t, m, st, maxLev), 'Read live from the perps market just now.');
+      } catch (e) { return ok(ctx, [{ label: `Perps ${t}`, value: `could not be read just now (${e instanceof Error ? e.message : String(e)})` }]); }
+    }, { name: 'get_perp_market', description: "Look up one perp market live: mark and index price, funding rate and when it is paid, the 24 h move and volume, the minimum order size and value, and the maximum leverage. Use it before proposing a perps trade, and for 'what is NVDA trading at', 'what is the funding', 'what leverage can I use'. Pass the ticker (NVDA, BTC, XAU).", schema: z.object({ ticker: z.string().min(1).max(20) }) }),
 
     tool(async ({ ticker, notionalUsd, strikePct, minDays }: { ticker: string; notionalUsd?: number; strikePct?: number; minDays?: number }) => {
       const t = ticker.toUpperCase().replace(/B$/, '');

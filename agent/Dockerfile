@@ -6,14 +6,12 @@
 FROM node:24-bookworm-slim
 WORKDIR /srv/agent
 ENV NODE_ENV=production \
-    AGENT_DB_PATH=/srv/agent/data/agent.db \
-    LIGHTER_WASM_DIR=/srv/vendor/lighter
+    AGENT_DB_PATH=/srv/agent/data/agent.db
 COPY agent/package.json agent/package-lock.json ./
 # tsx is a devDependency but is what runs the TypeScript sources, so install everything.
 RUN npm ci --include=dev --no-audit --no-fund && npm cache clean --force
 COPY --chown=node:node agent/ ./
 COPY --chown=node:node lib/ /srv/lib/
-COPY --chown=node:node vendor/lighter/ /srv/vendor/lighter/
 # Shared files in /srv/lib import zod and viem; let them resolve to the agent's copies.
 RUN ln -s /srv/agent/node_modules /srv/node_modules \
  && mkdir -p /srv/agent/data && chown -R node:node /srv/agent/data

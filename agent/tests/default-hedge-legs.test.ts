@@ -66,7 +66,7 @@ describe('collectSnapshot with hedging on and no legs', () => {
     clearMarketCache();
     const ids: string[] = [];
     const d = { ...deps([]), sigma: async (_n: string, t: string) => { ids.push(t); return t === 'NVDA' ? 0.08 : 0.063; },
-      hedge: { lighterMid: async () => null, lighterPosition: async () => 0, lighterMin: async () => null, derivePuts: async () => [] } } as unknown as CollectDeps;
+      hedge: { derivePuts: async () => [] } } as unknown as CollectDeps;
     const s = await collectSnapshot('0x1111111111111111111111111111111111111111', 'mainnet', cfg({ sizing: 'ratio' }), d);
     expect(ids.sort()).toEqual(['MSTR', 'NVDA']);
     expect(s.market?.sigmaDay).toEqual({ NVDA: 0.08, MSTR: 0.063 });

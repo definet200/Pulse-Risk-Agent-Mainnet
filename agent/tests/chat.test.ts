@@ -58,11 +58,11 @@ describe('the chat agent decides when to use tools', () => {
   }, 30_000);
 
   it('live read fails: the tool says why and nothing is answered from data', async () => {
-    setLiveReader(async () => { throw new Error('Lighter API is unavailable'); });
+    setLiveReader(async () => { throw new Error('Perps API is unavailable'); });
     const m = script([() => ai('', [{ name: 'get_portfolio', args: {} }]), () => ai('I could not read your accounts just now.')]);
     const r = await chat(req('What do I hold?'));
     const tool = m.seen[1].find((x): x is ToolMessage => x instanceof ToolMessage)!;
-    expect(String(tool.content)).toMatch(/could not read your live accounts just now \(Lighter API is unavailable\)/); expect(String(tool.content)).not.toMatch(/NVDA|TSLA|AAPL/);
+    expect(String(tool.content)).toMatch(/could not read your live accounts just now \(Perps API is unavailable\)/); expect(String(tool.content)).not.toMatch(/NVDA|TSLA|AAPL/);
     expect(r.cites).toHaveLength(0); expect(r.unsure).toBe(true);
   }, 30_000);
 

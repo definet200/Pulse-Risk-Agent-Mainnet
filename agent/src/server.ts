@@ -56,7 +56,7 @@ export const server = createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/chat') {
       let body: unknown; try { body = JSON.parse(await readBody(req)); } catch { return send(400, { error: 'body must be JSON' }); }
       const r = Req.parse(body);
-      // What the user reads never names a venue (Aster/Lighter = perps, Derive = options); the agent itself keeps the names.
+      // What the user reads never names a venue (Aster = perps, Derive = options); the agent itself keeps the names.
       return send(200, venueWordsDeep(await Promise.race([chat(r), new Promise<never>((_, rej) => setTimeout(() => rej(new Error('the agent took too long')), RUN_TIMEOUT_MS))])));
     }
     return send(404, { error: 'not found' });
