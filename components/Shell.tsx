@@ -13,8 +13,8 @@ import { BSTOCKS_BSC } from '@/lib/bstocks';
 type Item = { href: string; label: string; sub?: string; match: string };
 const TRADE: Item[] = [
   { href: '/trade/spot/NVDAB', label: 'Spot', sub: 'bStocks · BNB', match: '/trade/spot' },
-  { href: '/trade/perps', label: 'Perps', sub: 'Lighter', match: '/trade/perps' },
-  { href: '/trade/options', label: 'Options', sub: 'Derive', match: '/trade/options' },
+  { href: '/trade/perps', label: 'Perps', match: '/trade/perps' },
+  { href: '/trade/options', label: 'Options', match: '/trade/options' },
 ];
 const AGENT: Item[] = [
   { href: '/agents', label: 'Agent keys', match: '/agents' },
@@ -78,7 +78,7 @@ export function Shell({ children }: { children: ReactNode }) {
           {TRADE.map((i) => (
             <Link key={i.href} href={i.href} className={clsx('rounded-xl px-3 py-2', path.startsWith(i.match) ? 'border border-accent/50 bg-accent/[0.07] text-white shadow-[inset_3px_0_0_#f0b90b]' : 'border border-transparent text-[#c9ccd6] hover:border-line hover:text-white')}>
               <div className="text-[15px]">{i.label}</div>
-              <div className="text-[11px] text-muted">{i.sub}</div>
+              {i.sub && <div className="text-[11px] text-muted">{i.sub}</div>}
             </Link>
           ))}
         </div>
@@ -98,7 +98,6 @@ export function Shell({ children }: { children: ReactNode }) {
               <button key={n} onClick={() => setNetwork(n)} className={clsx('flex-1 rounded-full py-1 capitalize', network === n ? 'bg-white text-black' : 'text-muted')}>{n}</button>
             ))}
           </div>
-          <p className="mt-2 leading-snug">Applies to Lighter & Derive. bStocks are BNB Chain mainnet only.</p>
         </div>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
