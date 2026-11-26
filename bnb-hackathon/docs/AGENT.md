@@ -8,7 +8,7 @@ This guide is for the developer building the **hedging + margin-rebalancing agen
    │ grants capped allowance ─┐      • rules (hedge / rebalance)     ◀─ GET  /api/agent/v1/credentials
    │                          │      • activity log                  ◀─ GET  /api/agent/v1/config
    ▼                          └────▶ agent BSC wallet (AGENT_BSC_ADDRESS) ─ POST /api/agent/v1/events
- Aster perps account ◀── USDT depositFor (BNB Chain, no bridge) ◀── transferFrom(user) ─ your loop
+ Aster perps account ◀── USDT depositFor (no bridge) ◀── transferFrom(user) ─ your loop
  Derive subaccount ◀── Ethereum deposit ◀── Relay
 ```
 
@@ -142,7 +142,7 @@ Use `planHedge` → per leg `deltaUnits` (positive = more hedge), sized by notio
 BSC → Relay → Ethereum USDC to the agent wallet, then `approve(ACTION_MANAGER)` + `depositToNewSubaccount(0x57B0…f02b, amount6dp, managerId 1, owner=user)`. The agent needs ETH for gas. After about 2 minutes, `private/transfer_spot` from the new subaccount into the trading subaccount (`credentials.subaccountId`).
 
 ### Release (venue → BNB)
-- **Aster: the agent cannot release.** Withdrawals need the owner's own wallet signature, so a release rule on the perps account produces a note for the user instead of a move. The user withdraws in the app: `POST /api/trade/withdraw` with `venue: 'aster'` has two steps, `prepare` (returns typed data the user signs in MetaMask on BNB Chain) and `submit` (needs `Idempotency-Key`). The withdrawal history for Aster is not listed yet. `/api/trade/aster-transfer` is only the spot-to-futures move used by the deposit fallback.
+- **Aster: the agent cannot release.** Withdrawals need the owner's own wallet signature, so a release rule on the perps account produces a note for the user instead of a move. The user withdraws in the app: `POST /api/trade/withdraw` with `venue: 'aster'` has two steps, `prepare` (returns typed data the user signs in MetaMask) and `submit` (needs `Idempotency-Key`). The withdrawal history for Aster is not listed yet. `/api/trade/aster-transfer` is only the spot-to-futures move used by the deposit fallback.
 - **Derive:** `private/withdraw` (human amount, recipient = the owner, max fee $3), about 14 min to the owner's Ethereum address, then Relay ETH → BSC.
 - **Working code to copy:** `withdrawDerive` / `deriveWithdrawals` (`lib/server/derive.ts`), `encodeWithdrawData` (`lib/derive-codec.ts`). The user-facing route is `POST /api/trade/withdraw {network, venue, amount, subaccountId?}` + `Idempotency-Key`, and `GET /api/trade/withdraw?network=&venue=` for status. These use the user's session, not the agent token.
 - Released Derive funds land in the **user's** Ethereum wallet, so bridging back to BSC needs the user, or a second allowance on Ethereum.

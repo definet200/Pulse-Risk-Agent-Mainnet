@@ -23,7 +23,7 @@ The user's money never leaves the user's own accounts: BNB wallet, then their pe
   bStocks on Pancake    orders (agent key)    withdraw (session key)
 ```
 
-The perps leg needs no bridge: USDT goes from the agent wallet into the Aster vault on BNB Chain, credited to the user's own account. Only Derive uses a bridge (BNB to Ethereum).
+The perps leg needs no bridge: USDT goes from the agent wallet into the Aster vault, credited to the user's own account. Only Derive uses a bridge (BNB to Ethereum).
 
 ---
 
@@ -133,7 +133,7 @@ for (const rule of cfg.rebalance.rules.filter(r => r.enabled)) {
 
 The cooldown is never shorter than the venue's credit time (`MIN_COOLDOWN_SEC`, 300 s for both venues), because a second top-up before the first lands would double-fund.
 
-### 4.1 Top-up: perps account (Aster, all on BNB Chain)
+### 4.1 Top-up: perps account (Aster, funded from your BNB wallet, no bridge)
 
 Code: `agent/src/tools/asterDeposit.ts` (`fundAster`). No bridge.
 

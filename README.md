@@ -1,7 +1,7 @@
 # Pulse Risk
 
-**A risk desk for tokenized stocks, perpetuals and options on BNB Chain, with an agent that watches your margin and
-checks every price before it acts.**
+**A risk desk for tokenized stocks on BNB Chain, perpetuals on Aster and options on Derive, with an agent that watches
+your margin and checks every price before it acts.**
 
 Pulse Risk shows one portfolio across your BNB wallet, your perps account and your options account. An agent keeps
 margin healthy and places hedges inside limits you set. It can never withdraw your money, and in its default mode it does
@@ -31,6 +31,16 @@ one around price integrity, the other around trading and the agent.
 
 ---
 
+## Where things live
+
+| Part | Network |
+|---|---|
+| **bStocks** (tokenized stocks) | BNB Chain |
+| **Perps** (Aster) | Aster chain |
+| **Options** (Derive) | Ethereum |
+
+---
+
 ## How the pieces fit
 
 ```mermaid
@@ -53,8 +63,8 @@ The agent acts only through the app, only inside your limits, and only on prices
 
 ## Key facts
 
-- **Perps:** Aster on BNB Chain, USDT margin, leverage per order, funded from your BNB wallet with no bridge.
-- **Options:** Derive, with orders signed by a limited session key.
+- **Perps:** Aster (Aster chain), USDT margin, leverage per order, funded from your BNB wallet with no bridge.
+- **Options:** Derive (Ethereum), with orders signed by a limited session key.
 - **Agent:** margin top-ups, releases and hedges. Modes: **Ask me first** (default) and **Autonomous**.
 - **Limits in code:** kill switch, per-trade and per-day caps, leverage cap, daily loss cap, off-BNB cap, autonomy expiry.
 - **Safety:** the Aster agent key cannot withdraw; every order carries an idempotency key; keys are encrypted at rest.
@@ -63,7 +73,7 @@ The agent acts only through the app, only inside your limits, and only on prices
 
 ## Run it
 
-Requires Node 22.5 or newer and MetaMask on BNB Chain. Pick either folder, then:
+Requires Node 22.5 or newer and MetaMask. Pick either folder, then:
 
 ```bash
 cd bnb-hackathon                    # or CMC-X-Atlas

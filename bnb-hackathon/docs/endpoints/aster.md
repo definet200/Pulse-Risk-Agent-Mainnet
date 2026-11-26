@@ -1,6 +1,6 @@
 # Perps (Aster) notes and gotchas
 
-Perps run on Aster's futures API on BNB Chain (USDT margin). Base URL `https://fapi.asterdex.com`; all private calls use
+Perps run on Aster's futures API on the Aster chain (USDT margin). Base URL `https://fapi.asterdex.com`; all private calls use
 the **V3** endpoints (`/fapi/v3/...`). The older V1 order endpoints are gone. Facts below were checked live on mainnet
 with small sizes unless marked *unverified*.
 
@@ -56,7 +56,7 @@ second never collide).
 
 Leverage is per market. With $1 of margin at 5x the order is $5, which is how small accounts clear the minimum.
 
-## Funding the account (BNB Chain)
+## Funding the account
 
 Margin is USDT (18 decimals on BSC, `0x55d3…7955`) deposited into the Aster vault `0x1284…7974` (an
 `AstherusVault` proxy). Both `deposit(address,uint256,uint256)` and

@@ -2,7 +2,7 @@
 
 **Trade perpetuals and options from one screen, and let an agent watch your margin and hedge for you, inside limits you set.**
 
-Perps run on **Aster** (BNB Chain, USDT margin). Options run on **Derive**. An agent checks your accounts every 30
+Perps run on **Aster** (Aster chain, USDT margin). Options run on **Derive** (Ethereum). An agent checks your accounts every 30
 seconds, tops up margin from your BNB wallet before an account runs short, and places hedges. It cannot move money out,
 and in the default mode it does nothing until you press Approve.
 
@@ -17,6 +17,16 @@ and in the default mode it does nothing until you press Approve.
 | **Agent** | Keeps margin healthy, hedges your holdings, asks before it acts |
 | **Ask pulse (chat)** | Answers questions about your accounts and markets, and proposes trades and moves as requests you approve |
 | **Risk page** | Account health, margin rules, hedge legs, limits, stress test and the activity feed |
+
+---
+
+## Where things live
+
+| Part | Network |
+|---|---|
+| **bStocks** (tokenized stocks) | BNB Chain |
+| **Perps** (Aster) | Aster chain |
+| **Options** (Derive) | Ethereum |
 
 ---
 
@@ -55,15 +65,15 @@ acts, and only through the app.
 - **Leverage.** Set per order with a slider and quick picks, up to each market's own maximum.
 - **Sizing.** Enter the size in tokens, or the **margin in dollars**. The smallest order is $5, so $1 of margin at 5x clears it.
 - **Positions and orders.** Entry, mark, leverage and liquidation price for each position, plus open orders.
-- **Activity.** Past orders and deposits, each deposit linked to its BNB Chain transaction.
-- **Funding from your BNB wallet, no bridge.** Your USDC is swapped to USDT and deposited on BNB Chain in one flow. The
+- **Activity.** Past orders and deposits, each deposit linked to its transaction.
+- **Funding from your BNB wallet, no bridge.** Your USDC is swapped to USDT and deposited into Aster in one flow. The
   smallest deposit is about $6.
 - **A limited agent key.** One MetaMask signature registers a key that can place and cancel perp orders and read the account.
   It cannot trade spot and **cannot withdraw**. Money leaves Aster only with your own signature.
 
 ```mermaid
 flowchart LR
-    A["Connect wallet<br/>on BNB Chain"] --> B["Register the agent key<br/>1 signature"]
+    A["Connect your wallet"] --> B["Register the agent key<br/>1 signature"]
     B --> C["Fund from your BNB wallet<br/>USDC → USDT → deposit"]
     C --> D["Trade with leverage"]
 ```
@@ -147,7 +157,7 @@ a doubtful one is raised. In chat, CoinMarketCap also supplies the **stock event
 
 ## Run it
 
-Requires Node 22.5 or newer and MetaMask on BNB Chain.
+Requires Node 22.5 or newer and MetaMask.
 
 ```bash
 npm install

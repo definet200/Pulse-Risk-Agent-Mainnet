@@ -168,7 +168,7 @@ events for a US stock (earnings and the like), a whole-crypto-market overview, a
 
 ## Run it
 
-Requires Node 22.5 or newer and MetaMask on BNB Chain.
+Requires Node 22.5 or newer and MetaMask.
 
 ```bash
 npm install
