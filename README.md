@@ -17,6 +17,14 @@ Built for the CoinMarketCap x Atlas challenge. What is new in this version:
 
 3-minute walkthrough: [docs/DEMO.md](docs/DEMO.md).
 
+## Hackathon scope
+
+Pulse Risk builds on an earlier portfolio app by the same team ([plusarx/pulsarxbnb-portfolio](https://github.com/plusarx/pulsarxbnb-portfolio)):
+the first commit of this repository (Nov 25) carries that app over as its starting point. Everything after it was built
+during the hackathon, Nov 25 to 27: Aster perps with leverage, the price-integrity layer (Atlas + CoinMarketCap + perp
+cross-check), the CoinMarketCap chat tool, the on-chain guard contract, the agent changes and this documentation. See
+`git log` for the commit-by-commit history.
+
 ## What you can do
 
 | Page | What it does |
@@ -41,7 +49,7 @@ you ask for it), a margin move or a funding move. It never places anything itsel
 You need Node 22.5 or newer (the app uses the built-in `node:sqlite`) and a browser wallet (MetaMask) on BNB Chain.
 
 ```bash
-git clone https://github.com/plusarx/bnb-hackathon.git && cd bnb-hackathon
+git clone https://github.com/plusarx/pulsar-risk-bnb.git && cd pulsar-risk-bnb
 npm install
 cp .env.example .env.local          # then fill the secrets (see the table below)
 cd agent && npm install && cp .env.example .env && cd ..   # the agent has its own env
