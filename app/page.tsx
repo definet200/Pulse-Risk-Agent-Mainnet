@@ -10,6 +10,7 @@ import { useAgentKeys } from '@/lib/hooks/useVenues';
 import { useVenueNetwork } from '@/lib/network';
 import { fmtNum, fmtPct, fmtUsd } from '@/lib/format';
 import { AsciiLanding } from '@/components/landing/AsciiLanding';
+import { scrollToPortfolio } from '@/lib/portfolio-link';
 
 function Live({ at }: { at: number }) {
   const [now, setNow] = useState(Date.now());
@@ -42,6 +43,8 @@ function Usage({ pct }: { pct: number | null }) {
 
 export default function PortfolioPage() {
   const p = usePortfolio();
+  // Arriving from the chat's "View portfolio" button (/#portfolio): scroll to the section once the page has rendered.
+  useEffect(() => { if (window.location.hash === '#portfolio') { const t = setTimeout(() => scrollToPortfolio(), 350); return () => clearTimeout(t); } }, []);
   const tickers = useBStockTickers();
   const keys = useAgentKeys();
   const { network } = useVenueNetwork();
@@ -56,7 +59,7 @@ export default function PortfolioPage() {
 
   return (
     <div className="space-y-4">
-      <div className="panel flex flex-wrap items-end justify-between gap-4 p-6">
+      <div id="portfolio" className="panel flex scroll-mt-4 flex-wrap items-end justify-between gap-4 p-6">
         <div>
           <div className="label mb-1">Total portfolio value</div>
           <div className="num text-4xl font-semibold">{fmtUsd(p.total)}</div>
@@ -70,7 +73,7 @@ export default function PortfolioPage() {
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-4">
+      <div id="positions" className="grid gap-4 lg:grid-cols-4">
         <Card title="BNB Chain wallet" sub="MetaMask · BSC mainnet" href="/funding">
           <Row k="USDC" v={fmtNum(p.bsc.usdc)} cls="text-lg" />
           <Row k="USDT" v={fmtNum(p.bsc.usdt)} />
