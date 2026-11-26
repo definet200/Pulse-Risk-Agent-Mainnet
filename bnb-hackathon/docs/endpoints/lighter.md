@@ -258,7 +258,7 @@ Response fields were checked against the docs' OpenAPI and live mainnet response
 
 ## 4. Deposits
 
-### A. Direct Ethereum deposit (the simplest MetaMask path) [V-doc deposits page]
+### A. Direct Ethereum deposit (the simplest wallet path) [V-doc deposits page]
 
 - **Mainnet:** ZkLighter `0x3B4D794a66304F130a4Db8F2551B0070dfCf5ca7`, USDC `0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48` [V-live layer1BasicInfo].
 - **Function:** `deposit(address _to, uint16 _assetIndex, uint8 _routeType, uint256 _amount)`, payable, selector **0x8a857083**.
@@ -316,7 +316,7 @@ Response fields were checked against the docs' OpenAPI and live mainnet response
    - **Registering a key replaces whatever key is at that index.** Pick a dedicated index for the app.
 4. `nonce = GET /nextNonce?account_index=&api_key_index=`. Use the real value with `skipNonce = 0`.
 5. `SignChangePubKey(publicKey, 0, nonce, apiKeyIndex, accountIndex)` returns `{txType: 8, txInfo, messageToSign}`.
-6. **MetaMask signs `messageToSign` with plain `personal_sign`.** In viem that is `walletClient.signMessage({ message })`.
+6. **Your wallet signs `messageToSign` with plain `personal_sign`.** In viem that is `walletClient.signMessage({ message })`.
    - The measured template [V-code `manager-service/scripts/probe-lighter-changepubkey-pin.mjs:37-41`, `manager-service/src/noncustodial/hub/hub-policy.ts:695-707`]:
      ```
      Register Lighter Account\n\npubkey: 0x<80hex>\nnonce: 0x<16hex>\naccount index: 0x<16hex>\napi key index: 0x<16hex>\nOnly sign this message for a trusted client!
@@ -352,10 +352,10 @@ After registration, orders, cancels, leverage, margin, secure withdraw and same-
   - `:693` nonce
   - `:704-717` `sendTx` (FormData)
   - `:380-416` auth tokens
-- Our L1 signer is a Privy wallet rather than MetaMask. The message and signature format are identical.
+- Our L1 signer is a Privy wallet rather than a browser wallet. The message and signature format are identical.
 - **Can it run in a Next.js API route?** Yes, as long as it uses the **Node runtime (not Edge)**. Load the wasm once per process and keep the globals. Expect a cold start on serverless.
-- **Better for a hackathon:** generate the key in the browser and have MetaMask sign there, so the private key never leaves the device. Lighter's own guidance is "never ship your own API key to a browser; generate a key per user on their device" [V-doc].
-- **Catch for the backend agent:** if it must trade or rebalance, it needs that API private key. So either generate the key server-side (stored in KMS, one per user) and only send `messageToSign` to the browser for MetaMask, or register a second key index for the agent. Each key has its own nonce, which is the recommended separation.
+- **Better for a hackathon:** generate the key in the browser and have your wallet sign there, so the private key never leaves the device. Lighter's own guidance is "never ship your own API key to a browser; generate a key per user on their device" [V-doc].
+- **Catch for the backend agent:** if it must trade or rebalance, it needs that API private key. So either generate the key server-side (stored in KMS, one per user) and only send `messageToSign` to the browser for your wallet, or register a second key index for the agent. Each key has its own nonce, which is the recommended separation.
 
 ---
 
@@ -378,7 +378,7 @@ After registration, orders, cancels, leverage, margin, secure withdraw and same-
 - **Secure withdraw payload (VERIFIED with the vendored v1.0.13 signer, 2026-11-24):** `SignWithdraw` returns `txType 13`, no `messageToSign`, and `tx_info` fields `FromAccountIndex, ApiKeyIndex, AssetIndex, RouteType, Amount, ExpiredAt, Nonce, Sig`. There is **no destination field**, so a leaked API key can only send funds to the owner. Pinned in `tests/lighter-signer.test.ts`.
 - **Withdraw status:** `GET /withdraw/history?account_index=&filter=all&auth=<token>` (the `auth` query param works like the `authorization` header). `status`: `pending` → `claimable` (ready on Ethereum; Lighter normally completes the claim) → `completed`; `failed` / `refunded` = it didn't go. `completed` is the end state for fast withdrawals; secure ones may stop at `claimable` until claimed.
 - **This app:** `withdrawLighter` (master only, at most `available_balance`, minimum 1 USDC) and `lighterWithdrawals` in `lib/server/lighter.ts`; route `POST|GET /api/trade/withdraw`; UI on Funding → Lighter / Derive → Ethereum. Not yet sent with real funds.
-- **Implication for the agent:** with only the API key, it can move margin between the user's own master and sub-accounts (instant), adjust isolated margin, and secure-withdraw to the user's own Ethereum address. It **cannot** send funds elsewhere without a MetaMask signature.
+- **Implication for the agent:** with only the API key, it can move margin between the user's own master and sub-accounts (instant), adjust isolated margin, and secure-withdraw to the user's own Ethereum address. It **cannot** send funds elsewhere without a your wallet signature.
 - Each sub-account needs its own key registered. The same public key can be registered on master and sub (testnet-proven 2026-11-03). The secure-withdraw limit (3 per 2 h) is shared across all of an owner's accounts.
 - Our code:
   - `manager-service/src/lighter/lighter.service.ts:1981-2000` withdraw; `:2033` and `:2094` leverage and margin.

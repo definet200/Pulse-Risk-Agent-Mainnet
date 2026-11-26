@@ -5,7 +5,7 @@ Tags: **VERIFIED-doc** (docs page) · **VERIFIED-live** (curled 2026-11-23) · *
 
 ## 0. Read first
 
-1. **v2 is dead; v3 is live on both networks.** `api.lyra.finance` → 521. Auth headers are `X-Derive*` (not `X-Lyra*`). Deposits are on Ethereum L1 (no `private/deposit`). No smart-contract wallets — the MetaMask EOA *is* the account. (VERIFIED-live)
+1. **v2 is dead; v3 is live on both networks.** `api.lyra.finance` → 521. Auth headers are `X-Derive*` (not `X-Lyra*`). Deposits are on Ethereum L1 (no `private/deposit`). No smart-contract wallets — the your wallet EOA *is* the account. (VERIFIED-live)
 2. **REST is CORS-blocked from browsers** (only `app.derive.xyz` is allowed). Call REST from a server. This app proxies public methods at `POST /api/derive/<method>?network=`. WebSocket works from any origin. (VERIFIED-live)
 3. **Docs vs live disagreements — trust live:**
 
@@ -18,7 +18,7 @@ Tags: **VERIFIED-doc** (docs page) · **VERIFIED-live** (curled 2026-11-23) · *
 | Session key withdrawing to owner | always allowed | our testnet run got `11033` until the owner was whitelisted → **whitelist the owner at onboarding** (this app does) |
 
 4. **Deposits are Ethereum-only** (mainnet chainId 1, testnet Sepolia 11155111). No BNB Chain route. Relay does **not** support Derive (chain 957 unsupported) → BSC → Relay → Ethereum USDC → Derive deposit.
-5. **Trade with a session key**, not MetaMask — every order is its own EIP-712 signature.
+5. **Trade with a session key**, not your wallet — every order is its own EIP-712 signature.
 
 ## 1. URLs, chains
 
@@ -41,7 +41,7 @@ Errors: `{error:{code,message,data}}`. `transaction_id` is now `op_uuid`; `batch
 
 ## 2. Account model
 
-- Wallet = MetaMask EOA (`owner`, `X-DeriveWallet`). Subaccount = numeric id holding collateral + positions; one manager (margin type) each.
+- Wallet = EVM wallet (EOA) (`owner`, `X-DeriveWallet`). Subaccount = numeric id holding collateral + positions; one manager (margin type) each.
 - Managers (identical ids on both nets): PRIME (BTC/ETH) SM=1 / PM2=5 · MIDCAP (HYPE) 2/6 · ALT (SOL, XRP, BNB-PERP…) 3/7 · **RWA (NVDA, US100, US500, WTI, XAUT) 4/8**. Trades never cross universes.
 - **No create-account call.** The first credited L1 deposit creates the account + subaccount (and a non-trading fallback subaccount, manager 0). Before that, `private/*` returns `14000 Account not found`.
 - Instrument names: `ETH-PERP`, `ETH-20261124-1700-C` (`<CCY>-<YYYYMMDD>-<STRIKE>-<C|P>`).
@@ -80,7 +80,7 @@ Debug a `14014`: `public/decode_action`, `public/withdraw_debug`, `private/order
 
 ### Registering the agent — what this app does (`lib/server/derive.ts`)
 1. Server generates a secp256k1 session key (stored AES-GCM encrypted).
-2. MetaMask (switched to chain 1 / 11155111) signs: the `SET_SESSION_KEY` action (`subaccountId 0`), the `WHITELISTED_RECIPIENT` action adding the owner, and `personal_sign(timestamp)`.
+2. Your wallet (switched to chain 1 / 11155111) signs: the `SET_SESSION_KEY` action (`subaccountId 0`), the `WHITELISTED_RECIPIENT` action adding the owner, and `personal_sign(timestamp)`.
 3. Server calls `private/set_session_key` then `private/update_whitelisted_recipients`, then reads back `private/session_keys` and **refuses** if any dangerous scope is present.
 
 ```json
@@ -163,4 +163,4 @@ Alternative: `public/register_deposit_address {wallet, subaccount_id}` then plai
 - Testnet findings: `derive-v3-testnet/FINDINGS.md`
 
 ## Not verified
-Mainnet direct deposit / session-key registration with funds; a real mainnet withdraw (signing is verified via `withdraw_debug`, but no funds have been sent); mainnet `register_deposit_address`; whether a withdraw-scoped key can pay the owner without whitelisting; MetaMask chainId enforcement on typed data; PM2 USDC treatment.
+Mainnet direct deposit / session-key registration with funds; a real mainnet withdraw (signing is verified via `withdraw_debug`, but no funds have been sent); mainnet `register_deposit_address`; whether a withdraw-scoped key can pay the owner without whitelisting; your wallet chainId enforcement on typed data; PM2 USDC treatment.

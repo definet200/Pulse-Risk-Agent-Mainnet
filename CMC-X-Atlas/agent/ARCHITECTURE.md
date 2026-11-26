@@ -21,7 +21,7 @@ The LLM can only **narrow** the set of actions (pick one, veto it, or skip). It 
 
 ```
                          ┌──────────────────────── Pulse Risk app (Next.js + SQLite) ───────────────────────┐
-  user (MetaMask) ──────▶│ login · agent keys · rules (Risk mgmt page) · allowance · Activity feed       │
+  user (wallet) ──────▶│ login · agent keys · rules (Risk mgmt page) · allowance · Activity feed       │
                          └───────▲─────────────────────────────────────────────────▲─────────────────────┘
                                  │ Bearer AGENT_API_TOKEN                            │ events, rule-state
                                  │ wallets · config · credentials · rule-state       │
@@ -110,7 +110,7 @@ There is **no per-move approval**. The user approves once, in the app, and the a
 
 | Approval | Where | Effect |
 |---|---|---|
-| Wallet login | app, MetaMask signature | identifies the user |
+| Wallet login | app, wallet signature | identifies the user |
 | Agent keys | Agents page | lets the agent trade on Aster (it can never withdraw) and trade/transfer on Derive |
 | Rules + Automation on | Risk management page | when and how much, with caps |
 | Allowance | on-chain `approve` to the agent's BSC address | the hard cap on BNB funds the agent can pull; revocable any time |

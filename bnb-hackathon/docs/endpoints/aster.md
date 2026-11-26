@@ -8,7 +8,7 @@ with small sizes unless marked *unverified*.
 
 | Key | Who holds it | What it signs |
 |---|---|---|
-| Your wallet (MetaMask) | you | the one-time agent approval, deposits, withdrawals |
+| Your wallet (any EVM wallet) | you | the one-time agent approval, deposits, withdrawals |
 | Agent wallet | the server (stored AES-256-GCM encrypted) | reads, orders, leverage changes, cancels |
 
 The agent is approved with `canPerpTrade=true`, `canSpotTrade=false`, `canWithdraw=false`: it can trade and read the

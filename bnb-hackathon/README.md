@@ -34,7 +34,7 @@ and in the default mode it does nothing until you press Approve.
 
 ```mermaid
 flowchart LR
-    U["You<br/>browser + MetaMask"] --> APP["Web app<br/>Perps · Options · Risk page"]
+    U["You<br/>browser + wallet"] --> APP["Web app<br/>Perps · Options · Risk page"]
     APP <--> DB[("Encrypted keys,<br/>rules, requests")]
 
     AG["Agent<br/>checks every 30 s"] <-->|"private API"| APP
@@ -68,7 +68,7 @@ acts, and only through the app.
 - **Activity.** Past orders and deposits, each deposit linked to its transaction.
 - **Funding from your BNB wallet, no bridge.** Your USDC is swapped to USDT and deposited into Aster in one flow. The
   smallest deposit is about $6.
-- **A limited agent key.** One MetaMask signature registers a key that can place and cancel perp orders and read the account.
+- **A limited agent key.** One wallet signature registers a key that can place and cancel perp orders and read the account.
   It cannot trade spot and **cannot withdraw**. Money leaves Aster only with your own signature.
 
 ```mermaid
@@ -157,7 +157,7 @@ a doubtful one is raised. In chat, CoinMarketCap also supplies the **stock event
 
 ## Run it
 
-Requires Node 22.5 or newer and MetaMask.
+Requires Node 22.5 or newer and any EVM wallet.
 
 ```bash
 npm install

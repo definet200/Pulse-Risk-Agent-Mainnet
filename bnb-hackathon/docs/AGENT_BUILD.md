@@ -12,7 +12,7 @@ For: the developer building or extending the agent service. Companion to the [Ag
 The user's money never leaves the user's own accounts: BNB wallet, then their perps account or Derive subaccount, and back. The agent only signs with keys the user approved and within an allowance the user set.
 
 ```
- User (MetaMask) ──signs once──▶ Pulse Risk app (UI + backend)
+ User (wallet) ──signs once──▶ Pulse Risk app (UI + backend)
                                    │  agent keys (encrypted), rules, rule state, activity
                                    ▼  /api/agent/v1/*  (Bearer AGENT_API_TOKEN)
                                AGENT SERVICE

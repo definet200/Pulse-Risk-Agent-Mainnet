@@ -33,7 +33,7 @@ Quotes for 100 USDC (`POST /quote`, `EXACT_INPUT`):
   - `deposit`: `to = 0x4cd00e38…bc31`, `depositErc20(address depositor, address token, uint256 amount, bytes32 id)` (selector `0xe8017952`)
   - also `fees.relayer.amountUsd`, `details.currencyOut.{amount,minimumAmount}`, `details.timeEstimate`
 - **The destination is NOT in the calldata** (it lives in Relay's off-chain order); `depositor` = the user. Trust comes from the pinned router, the decoded amount and token, and `details.recipient`.
-  - `app/api/relay/quote/route.ts` checks all of these before MetaMask sees anything.
+  - `app/api/relay/quote/route.ts` checks all of these before your wallet sees anything.
 - Status: `GET /intents/status/v3?requestId=` → `waiting | depositing | pending | success | failure | refund`. Only `success` and `refund` are final.
 - SDK (optional): `@relayprotocol/relay-sdk` 8.3.0. Its Lighter adapter signs Lighter-origin withdrawals.
 

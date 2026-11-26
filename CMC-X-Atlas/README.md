@@ -168,7 +168,7 @@ events for a US stock (earnings and the like), a whole-crypto-market overview, a
 
 ## Run it
 
-Requires Node 22.5 or newer and MetaMask.
+Requires Node 22.5 or newer and any EVM wallet.
 
 ```bash
 npm install

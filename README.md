@@ -45,7 +45,7 @@ one around price integrity, the other around trading and the agent.
 
 ```mermaid
 flowchart LR
-    U["You<br/>browser + MetaMask"] --> APP["Web app<br/>Perps · Options · Risk page"]
+    U["You<br/>browser + wallet"] --> APP["Web app<br/>Perps · Options · Risk page"]
     AG["Agent<br/>checks every 30 s"] <--> APP
 
     APP --> AS["Aster perps"]
@@ -73,7 +73,7 @@ The agent acts only through the app, only inside your limits, and only on prices
 
 ## Run it
 
-Requires Node 22.5 or newer and MetaMask. Pick either folder, then:
+Requires Node 22.5 or newer and any EVM wallet. Pick either folder, then:
 
 ```bash
 cd bnb-hackathon                    # or CMC-X-Atlas
