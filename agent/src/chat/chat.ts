@@ -1,6 +1,11 @@
 import type { VenueAlternative } from '../../../lib/agent-action';
 import { tickerOf } from '../risk/market';
 import { chatTradeRequest, quoteSpec, specFrom } from './trade';
+import { describeSubs, moveProblems, moveRequest, resolveSub, subLabel, usdcOf, freeOf, type ChatMoveSpec } from './move';
+import { listSubaccounts } from '../tools/derive';
+import { fundCandidate, fundRequest, resolveRule, ruleLabel, toBase, type ChatFundSpec } from './fund';
+import { ruleKey } from '../../../lib/risk-rules';
+import { checkCandidate } from '../tools/guard';
 import { postActionToApp } from '../tools/appApi';
 import { payoff, type Payoff } from '../risk/payoff';
 import { quotePut } from '../risk/putQuote';
@@ -153,6 +158,11 @@ function resultFacts(inputs: string[], r: WhatIfResult): { label: string; value:
   return f;
 }
 
+async function readDeriveSubs(ctx: Ctx) {
+  const creds = await app.getDeriveCreds(ctx.req.wallet, ctx.req.network);
+  return listSubaccounts(ctx.req.network, ctx.req.wallet, creds);
+}
+
 function makeTools(ctx: Ctx): StructuredToolInterface[] {
   return [
     tool(async () => {
@@ -270,6 +280,47 @@ function makeTools(ctx: Ctx): StructuredToolInterface[] {
         return ok(ctx, items, 'The request card with Approve and Reject is shown below the answer.');
       } catch (e) { return ok(ctx, [{ label: 'Trade request', value: `not created: ${e instanceof Error ? e.message : String(e)}` }]); }
     }, { name: 'propose_trade', description: "Turn a position the user asks for into a real order request in their account, shown with Approve and Reject. Use it when they ask you to take, place, open, buy, sell, short or close a position (e.g. 'buy that NVDA put', 'short 0.07 NVDA on Lighter'). Derive: buy a put (exact instrument name such as NVDA-20261204-133-P, from price_derive_put) or trade a perp (NVDA-PERP). Lighter: a perp by symbol (NVDA), buy or sell. amount = contracts (Derive) or units (Lighter). Nothing executes until the user presses Approve.", schema: z.object({ venue: z.enum(['lighter', 'derive']), instrument: z.string().min(2).max(40), side: z.enum(['buy', 'sell']), amount: z.number().positive().max(1_000_000) }) }),
+
+    tool(async () => {
+      ctx.steps.push({ tool: 'get_derive_subaccounts', label: 'Read your Derive subaccounts' });
+      if (!ctx.req.signedIn) return ok(ctx, [{ label: 'Derive subaccounts', value: 'not read: you are not signed in' }]);
+      try {
+        const subs = await withTimeout(readDeriveSubs(ctx), 20_000, 'Derive');
+        return ok(ctx, subs.map((s) => ({ label: subLabel(s), value: `${usdcOf(s).toFixed(2)} USDC, ${Math.max(0, freeOf(s)).toFixed(2)} free margin${s.is_under_liquidation ? ', BEING LIQUIDATED' : ''}; positions: ${s.positions.length ? s.positions.map((p) => `${p.instrument_name} ${p.amount}`).join(', ') : 'none'}` })));
+      } catch (e) { return ok(ctx, [{ label: 'Derive subaccounts', value: `could not be read: ${e instanceof Error ? e.message : String(e)}` }]); }
+    }, { name: 'get_derive_subaccounts', description: "List the user's own Derive subaccounts (main account and the per-universe ones such as RWA, PRIME) with their USDC, free margin and positions. Use it before moving margin, or when they ask what is in each Derive account.", schema: z.object({}) }),
+
+    tool(async ({ from, to, amountUsd }: { from: string; to: string; amountUsd: number }) => {
+      ctx.steps.push({ tool: 'propose_margin_move', label: `Prepared a $${amountUsd} margin move for your approval` });
+      if (!ctx.req.signedIn) return ok(ctx, [{ label: 'Margin move', value: 'not created: you are not signed in. Sign in with your wallet, then ask again.' }]);
+      try {
+        const s = await ctx.ensureSnapshot();
+        const subs = await withTimeout(readDeriveSubs(ctx), 20_000, 'Derive');
+        const a = resolveSub(subs, from); const b = resolveSub(subs, to);
+        const spec: ChatMoveSpec = { venue: 'derive', fromId: a.subaccount_id, toId: b.subaccount_id, fromLabel: subLabel(a), toLabel: subLabel(b), amountUsd: (Math.floor(amountUsd * 100) / 100).toFixed(2) };
+        const problems = moveProblems(subs, spec, s.config.limits);
+        if (problems.length) return ok(ctx, [{ label: 'Margin move', value: `not created: ${problems.join('; ')}. Nothing was moved. Subaccounts now: ${describeSubs(subs)}` }]);
+        const r = await postActionToApp(moveRequest(s, spec));
+        ctx.ui.showPending = true;
+        return ok(ctx, [{ label: 'Margin move', value: `${spec.amountUsd} USDC from ${spec.fromLabel} to ${spec.toLabel}: ${r.duplicate ? 'already waiting' : 'created'} (status ${r.status}). It is NOT moved yet: it runs only when the user presses Approve below, in every mode. The agent re-checks both balances, the per-move cap and the kill switch then.` }], 'The request card with Approve and Reject is shown below the answer.');
+      } catch (e) { return ok(ctx, [{ label: 'Margin move', value: `not created: ${e instanceof Error ? e.message : String(e)}` }]); }
+    }, { name: 'propose_margin_move', description: "Ask to move USDC margin between the user's OWN Derive subaccounts (e.g. 'move 200 from my NVDA account to main'). from/to = a subaccount id, 'main', a universe name (RWA, PRIME, MIDCAP, ALT) or a ticker held there (NVDA). Creates a request with Approve and Reject; nothing moves until they press Approve, in every mode. Call get_derive_subaccounts first if you are unsure which account they mean. Only Derive subaccount-to-subaccount moves are supported here, not Lighter, withdrawals or other wallets.", schema: z.object({ from: z.string().min(1).max(40), to: z.string().min(1).max(40), amountUsd: z.number().min(1).max(1_000_000) }) }),
+
+    tool(async ({ direction, venue, account, amountUsd }: { direction: 'add' | 'withdraw'; venue: 'lighter' | 'derive'; account?: string; amountUsd: number }) => {
+      ctx.steps.push({ tool: 'propose_fund_move', label: `Prepared ${direction === 'add' ? 'adding' : 'withdrawing'} $${amountUsd} for your approval` });
+      if (!ctx.req.signedIn) return ok(ctx, [{ label: 'Funds move', value: 'not created: you are not signed in. Sign in with your wallet, then ask again.' }]);
+      try {
+        const s = await ctx.ensureSnapshot();
+        const rule = resolveRule(s.config.rebalance.rules, venue, account);
+        const spec: ChatFundSpec = { direction, ruleKey: ruleKey(rule), venue, amountBaseUnit: toBase(amountUsd), amountUsd: (Math.floor(amountUsd * 100) / 100).toFixed(2), label: ruleLabel(rule) };
+        const { c, problem } = fundCandidate(s, spec, 'chat-fund-check');
+        if (!c) return ok(ctx, [{ label: 'Funds move', value: `not created: ${problem}. Nothing was moved.` }]);
+        const why = await withScratchStore(async () => checkCandidate(c, s)); if (why) return ok(ctx, [{ label: 'Funds move', value: `not created: ${why}. Nothing was moved.` }]);
+        const r = await postActionToApp(fundRequest(s, spec, c));
+        ctx.ui.showPending = true;
+        return ok(ctx, [{ label: 'Funds move', value: `${direction === 'add' ? 'Add' : 'Withdraw'} $${spec.amountUsd} ${direction === 'add' ? 'to' : 'from'} ${spec.label}: ${r.duplicate ? 'already waiting' : 'created'} (status ${r.status}). It is NOT moved yet: it runs only when the user presses Approve below, in every mode. ${direction === 'withdraw' ? 'A withdrawal lands in their Ethereum wallet, not on BNB Chain, and takes about 14 to 26 minutes. ' : 'The money comes from their BNB wallet cash (USDC/USDT) within the allowance they gave the agent. '}Caps, reserve and kill switch are re-checked at approval.` }], 'The request card with Approve and Reject is shown below the answer.');
+      } catch (e) { return ok(ctx, [{ label: 'Funds move', value: `not created: ${e instanceof Error ? e.message : String(e)}` }]); }
+    }, { name: 'propose_fund_move', description: "Ask to move money between the user's BNB wallet and a venue account they have set up on the Risk page: direction 'add' puts USDC from their BNB wallet into Lighter or Derive (bridged and deposited); 'withdraw' takes idle margin out of Lighter or Derive to their own Ethereum wallet. account = 'main' or the account number from their set-up accounts (omit if they have one). Creates a request with Approve and Reject; nothing moves until they press Approve, in every mode. Use it for 'add $500 to Lighter', 'top up my Derive account', 'take $300 out of Lighter'. It never sells bStocks. Moving between two Derive subaccounts is propose_margin_move. Lighter to Derive directly, or back to BNB Chain, is not supported (withdrawals land on Ethereum): say so plainly.", schema: z.object({ direction: z.enum(['add', 'withdraw']), venue: z.enum(['lighter', 'derive']), account: z.string().max(40).optional(), amountUsd: z.number().min(1).max(1_000_000) }) }),
 
     tool(async ({ tickers }: { tickers?: string[] }) => {
       ctx.steps.push({ tool: 'get_market_data', label: 'Looked up market data' });
