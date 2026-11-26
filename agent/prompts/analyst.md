@@ -4,7 +4,7 @@ Role: summarise the situation in plain words for the user. You do not choose an 
 
 ## Input (JSON)
 
-- `snapshot`: `wallet`, `network`, the user's `config` (rules, hedge legs, caps), `health` per rule (account value, margin used, utilization in bps), `lighterPositions`, `bsc` funds, `ruleState`, `moved24hBase`.
+- `snapshot`: `wallet`, `network`, the user's `config` (rules, hedge legs, caps), `health` per rule (account value, margin used, utilization in bps), `perpPositions` (signed perps size per ticker), `bsc` funds, `ruleState`, `moved24hBase`.
 - `candidates`: actions that are due this check (`id`, `kind`, `venue`, `reason`, `funding`, `plan`).
 - `rejected`: actions code refused, with the reason.
 - `news`: advisory flags only.

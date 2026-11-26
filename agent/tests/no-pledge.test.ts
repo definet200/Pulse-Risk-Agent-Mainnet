@@ -25,7 +25,7 @@ describe('pledging is gone: margin comes from USDC, USDT, then SELLING bStocks',
     expect(c.rebalance.sellOrder).toEqual(['SPYB']);
   });
   it('a top-up that USDC cannot cover is funded by selling the bStock, with no pledge step anywhere', async () => {
-    const s = fixtureSnapshot({ health: { 'lighter:': { connected: true, utilBps: 8000, accountUsd: 100, usedUsd: 80 } },
+    const s = fixtureSnapshot({ health: { 'aster:': { connected: true, utilBps: 8000, accountUsd: 100, usedUsd: 80 } },
       bsc: { usdcUsd: 5, usdtUsd: 0, allowanceUsdcBase: '500000000', bstocks: [{ symbol: 'SPYB', qty: 1, value: 500, allowanceQty: 1 }] } });
     s.config.rebalance = { ...s.config.rebalance, enabled: true, sources: ['bsc_usdc', 'sell_bstocks'], sellOrder: ['SPYB'], keepBscReserveBaseUnit: '10000000' };
     const c = buildCandidates(s).candidates.find((x) => x.kind === 'top_up')!;

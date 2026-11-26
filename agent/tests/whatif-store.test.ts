@@ -9,7 +9,7 @@ import * as store from '../src/tools/store';
 describe('what-if never breaks the next live read', () => {
   beforeEach(() => resetConfigForTests(loadConfig({ ...process.env, DRY_RUN: 'true', POST_EVENTS: 'false', LLM_MODE: 'off', APP_API_URL: 'http://127.0.0.1:9', AGENT_API_TOKEN: 'x' })));
   const W = '0x1111111111111111111111111111111111111111';
-  const read = () => withScratchStore(async () => [store.notional24h(W, 'mainnet'), store.moved24h(W, 'mainnet', 'lighter:')]);
+  const read = () => withScratchStore(async () => [store.notional24h(W, 'mainnet'), store.moved24h(W, 'mainnet', 'aster:')]);
 
   it('a live read after a what-if works', async () => {
     await expect(read()).resolves.toBeDefined();

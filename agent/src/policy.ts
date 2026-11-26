@@ -12,7 +12,7 @@ import { legInConfig } from './tools/hedgeLeg';
 /** Repeated instructions hidden in news text suspend autonomy (the agent asks first) instead of pausing everything. */
 export const INJECTION_PAUSE = 3;
 /** Capital already sitting on the venues: what the store counted, or the equity the venues report, whichever is larger. */
-export const parkedOffBnb = (s: Snapshot): number => Math.max(s.today?.capitalOffBnbUsd ?? 0, (s.lighterMain?.equityUsd ?? 0) + (s.deriveFree?.freeUsd ?? 0));
+export const parkedOffBnb = (s: Snapshot): number => Math.max(s.today?.capitalOffBnbUsd ?? 0, (s.perpMain?.equityUsd ?? 0) + (s.deriveFree?.freeUsd ?? 0));
 
 export interface PolicyVerdict { block: string | null; confirm: string | null }
 export const OK: PolicyVerdict = { block: null, confirm: null };

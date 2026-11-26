@@ -5,7 +5,7 @@ import { getDb } from './db';
 // Pending (in-progress) agent-key registrations. Never touches agent_keys until promote(), so a started,
 // cancelled or failed rotation leaves the working key in place.
 
-export type Venue = 'lighter' | 'derive';
+export type Venue = 'aster' | 'lighter' | 'derive';
 export interface PendingRow { account_ref: string; key_ref: string; public_key: string; enc_secret: string; scope: string | null; expires_at: number | null; meta: string | null }
 
 export function writePending(wallet: string, venue: Venue, n: VenueNetwork, r: PendingRow): void {

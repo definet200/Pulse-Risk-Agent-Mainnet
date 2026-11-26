@@ -28,17 +28,17 @@ if (!liveNews) setTextFetcher(async (u) => (u.includes('TSLA') || u.includes('Te
 const iso = (h: number) => new Date(Date.now() + h * 3_600_000).toISOString();
 /** The spec's $50k portfolio: $20k NVDA, $15k TSLA, $15k AAPL as bStocks; 5% loss tolerance; NVDA reports in 18 hours. */
 function book(mode: 'confirm' | 'autonomous'): Snapshot {
-  const s = fixtureSnapshot({ health: { 'lighter:': { connected: true, utilBps: 3000, accountUsd: 500, usedUsd: 150 } } });
+  const s = fixtureSnapshot({ health: { 'aster:': { connected: true, utilBps: 3000, accountUsd: 500, usedUsd: 150 } } });
   s.config.mode = mode; s.config.rebalance.sellOrder = ['NVDAB', 'TSLAB', 'AAPLB'];
   s.config.hedge = { enabled: true, driftThresholdPct: 5, sizing: 'loss_limit', news: { enabled: true }, legs: [
-    { bstock: 'NVDAB', venue: 'lighter', kind: 'perp', market: 'NVDA', marketId: 110, hedgeRatio: 1 },
-    { bstock: 'TSLAB', venue: 'lighter', kind: 'perp', market: 'TSLA', marketId: 120, hedgeRatio: 1 },
-    { bstock: 'AAPLB', venue: 'lighter', kind: 'perp', market: 'AAPL', marketId: 130, hedgeRatio: 1 }] };
+    { bstock: 'NVDAB', venue: 'aster', kind: 'perp', market: 'NVDA', hedgeRatio: 1 },
+    { bstock: 'TSLAB', venue: 'aster', kind: 'perp', market: 'TSLA', hedgeRatio: 1 },
+    { bstock: 'AAPLB', venue: 'aster', kind: 'perp', market: 'AAPL', hedgeRatio: 1 }] };
   s.config.risk = { ...s.config.risk, lossTolerancePct: 5, premiumBudgetWeeklyPct: 1 };
   s.config.events = [{ ticker: 'NVDA', at: iso(18), kind: 'earnings', gapPct: 12 }];
   s.bsc = { usdcUsd: 3000, usdtUsd: 0, allowanceUsdcBase: '2500000000', bstocks: [
     { symbol: 'NVDAB', qty: 100, value: 20_000, allowanceQty: 100 }, { symbol: 'TSLAB', qty: 60, value: 15_000, allowanceQty: 60 }, { symbol: 'AAPLB', qty: 75, value: 15_000, allowanceQty: 75 }] };
-  s.lighterPositions = {}; s.lighterMain = { equityUsd: 500, freeUsd: 350 }; s.bridgeEtaSec = 600; s.hedgeProblems = [];
+  s.perpPositions = {}; s.perpMain = { equityUsd: 500, freeUsd: 350 }; s.perpEtaSec = 600; s.hedgeProblems = [];
   s.market = { sigmaDay: { NVDA: 0.032, TSLA: 0.042, AAPL: 0.016 }, at: new Date().toISOString() };
   s.today = { notionalUsd: 0, lossUsd: 0, capitalOffBnbUsd: 500, pausedReason: null };
   return s;
@@ -78,7 +78,7 @@ async function run(snap: Snapshot, memo?: ReturnType<typeof memoryActions>) {
 // 1. The spec's pre-earnings hedge in confirmation mode: sized from the loss limit, asks, user approves, agent acknowledges.
 {
   const memo = memoryActions(); setActionsBackend(memo.backend);
-  show('1. PRE-EARNINGS HEDGE, CONFIRMATION MODE', { Portfolio: '$50,000 bStocks: NVDA $20k, TSLA $15k, AAPL $15k', 'Loss you accept': '5% over the event', 'Next event': 'NVDA earnings in 18h (12% gap assumed)', 'Daily vol': 'NVDA 3.2%, TSLA 4.2%, AAPL 1.6%', 'Lighter margin': '$350 free', 'BNB wallet': '$3,000 USDC', Mode: 'Ask me first' });
+  show('1. PRE-EARNINGS HEDGE, CONFIRMATION MODE', { Portfolio: '$50,000 bStocks: NVDA $20k, TSLA $15k, AAPL $15k', 'Loss you accept': '5% over the event', 'Next event': 'NVDA earnings in 18h (12% gap assumed)', 'Daily vol': 'NVDA 3.2%, TSLA 4.2%, AAPL 1.6%', 'Perps margin': '$350 free', 'BNB wallet': '$3,000 USDC', Mode: 'Ask me first' });
   await run(book('confirm'), memo);
   if (memo.rows.length) {
     console.log('>> user clicks Approve in the app'); memo.approve(memo.rows[0].id);
@@ -90,7 +90,7 @@ async function run(snap: Snapshot, memo?: ReturnType<typeof memoryActions>) {
 
 // 2. Margin top-up paid by SELLING a bStock (wallet has no stables).
 {
-  show('2. MARGIN TOP-UP FROM A SOLD bStock', { 'Lighter account': '$100, $82 used = 82% (trigger 70%)', 'BNB stables': '$0', 'bStock held': 'SPYB 1 unit = $500, allowance to the agent 1 unit', 'Counted at': '70% of value (30% haircut)', Mode: 'Autonomous' });
+  show('2. MARGIN TOP-UP FROM A SOLD bStock', { 'Perps account': '$100, $82 used = 82% (trigger 70%)', 'BNB stables': '$0', 'bStock held': 'SPYB 1 unit = $500, allowance to the agent 1 unit', 'Counted at': '70% of value (30% haircut)', Mode: 'Autonomous' });
   const s = fixtureSnapshot({ bsc: { usdcUsd: 0, usdtUsd: 0, bstocks: [{ symbol: 'SPYB', qty: 1, value: 500, allowanceQty: 1 }], allowanceUsdcBase: '0' } });
   s.config.rebalance.sources = ['sell_bstocks']; s.config.rebalance.sellOrder = ['SPYB'];
   const r = await run(s);

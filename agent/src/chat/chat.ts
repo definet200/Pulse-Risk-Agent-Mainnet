@@ -28,7 +28,7 @@ import { buildMockSnapshot, describeMock, MARKETS, MockPortfolio } from './mock'
 import { applyOverrides, Overrides } from './overrides';
 import { DEFAULT_CONFIG } from '../../../lib/agent-config';
 import { runWhatIf, withScratchStore, type WhatIfResult } from './whatif';
-import { lighterGet } from '../tools/lighter';
+import { markets as perpMarketList } from '../tools/aster';
 
 // The chat agent: a tool-using LangGraph (model -> tools -> model ...). The model decides, per message, whether it needs any tool at all. "Hi"
 // gets a plain reply and no data is read. Questions about the user's money read their portfolio; "what if" questions and portfolios typed in text
@@ -220,15 +220,14 @@ function makeTools(ctx: Ctx): StructuredToolInterface[] {
       schema: z.object({ base: z.enum(['current', 'mock']), overrides: Overrides.optional(), mock: MockPortfolio.optional() }) }),
 
     tool(async ({ tickers }: { tickers?: string[] }) => {
-      ctx.steps.push({ tool: 'get_venue_tickers', label: 'Looked up the tickers on Lighter and Derive' });
+      ctx.steps.push({ tool: 'get_venue_tickers', label: 'Looked up the tickers on perps and options' });
       const want = (tickers ?? []).map((t) => t.toUpperCase().replace(/B$/, '')).filter(Boolean);
       const items: { label: string; value: string }[] = [];
       try {
-        const j = await withTimeout(lighterGet<{ order_books?: { symbol: string; market_type?: string }[] }>('mainnet', 'orderBooks'), 12_000, 'Lighter');
-        const all = j.order_books ?? []; const perps = all.filter((m) => (m.market_type ?? 'perp') !== 'spot').map((m) => m.symbol);
-        if (!want.length) items.push({ label: 'Lighter markets', value: `${perps.length} perp markets: ${perps.join(', ')}` });
-        for (const t of want) { const hit = all.filter((m) => m.symbol.toUpperCase() === t || m.symbol.toUpperCase().startsWith(`${t}-`) || m.symbol.toUpperCase() === `${t}USD`); items.push({ label: `Lighter ${t}`, value: hit.length ? `listed: ${hit.map((m) => `${m.symbol}${m.market_type ? ` (${m.market_type})` : ''}`).join(', ')}` : 'no market with that symbol in the live Lighter market list' }); }
-      } catch (e) { items.push({ label: 'Lighter markets', value: `could not be read just now (${e instanceof Error ? e.message : String(e)})` }); }
+        const all = await withTimeout(perpMarketList('mainnet'), 12_000, 'perps');
+        if (!want.length) items.push({ label: 'Perp markets', value: `${all.length} perp markets: ${all.map((m) => m.symbol).join(', ')}` });
+        for (const t of want) { const hit = all.find((m) => m.ticker === t || m.symbol === t); items.push({ label: `Perps ${t}`, value: hit ? `listed: ${hit.symbol} (minimum order $${hit.minNotionalUsd}, size step ${hit.stepSize})` : 'no market with that symbol in the live perps market list' }); }
+      } catch (e) { items.push({ label: 'Perp markets', value: `could not be read just now (${e instanceof Error ? e.message : String(e)})` }); }
       try {
         // Derive v3 has no public/get_instruments: the live list is public/get_all_live_instruments (names encode
         // UNDERLYING-YYYYMMDD-STRIKE-C|P). Index ETFs map to Derive's index options (SPY -> US500, QQQ -> US100).
@@ -243,8 +242,8 @@ function makeTools(ctx: Ctx): StructuredToolInterface[] {
           items.push({ label: `Derive ${t}`, value: v && v.n > 1 ? `options listed${ccy !== t ? ` (as ${ccy})` : ''}: ${v.n} live (${v.puts} puts), expiries ${exps}${v.exp.size > 4 ? ', ...' : ''}` : 'no live options with that underlying on Derive' });
         }
       } catch (e) { items.push({ label: 'Derive currencies', value: `could not be read just now (${e instanceof Error ? e.message : String(e)})` }); }
-      return ok(ctx, items, 'Read live from the Lighter and Derive public APIs just now.');
-    }, { name: 'get_venue_tickers', description: 'List what is actually tradeable right now on Lighter (perp markets) and Derive (option underlyings), read live from both venues. Pass tickers to check specific ones (for example NVDA, XAU, ETH); omit to list everything. Use it when the user asks which tickers or markets exist, or before saying a hedge market is unavailable: never claim a ticker is missing without checking here.', schema: z.object({ tickers: z.array(z.string().max(10)).max(12).optional() }) }),
+      return ok(ctx, items, 'Read live from the perps and options public APIs just now.');
+    }, { name: 'get_venue_tickers', description: 'List what is actually tradeable right now on perps (perp markets, e.g. NVDAUSDT) and Derive (option underlyings), read live from both venues. Pass tickers to check specific ones (for example NVDA, XAU, ETH); omit to list everything. Use it when the user asks which tickers or markets exist, or before saying a hedge market is unavailable: never claim a ticker is missing without checking here.', schema: z.object({ tickers: z.array(z.string().max(10)).max(12).optional() }) }),
 
     tool(async ({ ticker, notionalUsd, strikePct, minDays }: { ticker: string; notionalUsd?: number; strikePct?: number; minDays?: number }) => {
       const t = ticker.toUpperCase().replace(/B$/, '');
@@ -266,14 +265,15 @@ function makeTools(ctx: Ctx): StructuredToolInterface[] {
       } catch (e) { return ok(ctx, [{ label: `Derive ${t} put`, value: `could not be priced just now (${e instanceof Error ? e.message : String(e)})` }]); }
     }, { name: 'price_derive_put', description: "Price a protective put on Derive LIVE for one ticker: reads the order book and returns the instrument, contracts, premium, fees, Derive's minimum size, and the payoff before and after (the chat draws it). Defaults: the user's holding value, an at-the-money strike, the first expiry at least 7 days out. Use whenever the user asks what a put costs or to compare a put with a perp.", schema: z.object({ ticker: z.string().max(10), notionalUsd: z.number().positive().max(10_000_000).optional(), strikePct: z.number().min(50).max(120).optional(), minDays: z.number().min(1).max(45).optional() }) }),
 
-    tool(async ({ venue, instrument, side, amount }: { venue: 'lighter' | 'derive'; instrument: string; side: 'buy' | 'sell'; amount: number }) => {
+    tool(async ({ venue: v, instrument, side, amount }: { venue: 'perps' | 'derive'; instrument: string; side: 'buy' | 'sell'; amount: number }) => {
+      const venue = v === 'derive' ? 'derive' as const : 'aster' as const;
       ctx.steps.push({ tool: 'propose_trade', label: `Prepared ${side} ${amount} ${instrument} for your approval` });
       if (!ctx.req.signedIn) return ok(ctx, [{ label: 'Trade request', value: 'not created: you are not signed in. Sign in with your wallet, then ask again.' }]);
       try {
         const s = await ctx.ensureSnapshot();
         if (ctx.source !== 'live') return ok(ctx, [{ label: 'Trade request', value: 'not created: your live accounts could not be read' }]);
         const spec0 = await specFrom(s.network, { venue, instrument, side, amount });
-        const q = await withTimeout(quoteSpec(s.network, spec0), 20_000, venue === 'derive' ? 'Derive' : 'Lighter');
+        const q = await withTimeout(quoteSpec(s.network, spec0), 20_000, venue === 'derive' ? 'Derive' : 'perps');
         const spec = { ...spec0, quotedPrice: q.price };
         const { post, payoff: po } = chatTradeRequest(s, spec, q);
         const r = await postActionToApp(post);
@@ -285,7 +285,7 @@ function makeTools(ctx: Ctx): StructuredToolInterface[] {
         if (po) { const d = po.points.find((x) => x.movePct === -20); const u = po.points.find((x) => x.movePct === 20); if (d && u) items.push({ label: `${po.ticker} payoff with this trade`, value: `at -20%: ${d.beforeUsd} before vs ${d.afterUsd} after; at +20%: ${u.beforeUsd} vs ${u.afterUsd} (USD)` }); }
         return ok(ctx, items, 'The request card with Approve and Reject is shown below the answer.');
       } catch (e) { return ok(ctx, [{ label: 'Trade request', value: `not created: ${e instanceof Error ? e.message : String(e)}` }]); }
-    }, { name: 'propose_trade', description: "Turn a position the user asks for into a real order request in their account, shown with Approve and Reject. Use it when they ask you to take, place, open, buy, sell, short or close a position (e.g. 'buy that NVDA put', 'short 0.07 NVDA on Lighter'). Derive: buy a put (exact instrument name such as NVDA-20261204-133-P, from price_derive_put) or trade a perp (NVDA-PERP). Lighter: a perp by symbol (NVDA), buy or sell. amount = contracts (Derive) or units (Lighter). Nothing executes until the user presses Approve.", schema: z.object({ venue: z.enum(['lighter', 'derive']), instrument: z.string().min(2).max(40), side: z.enum(['buy', 'sell']), amount: z.number().positive().max(1_000_000) }) }),
+    }, { name: 'propose_trade', description: "Turn a position the user asks for into a real order request in their account, shown with Approve and Reject. Use it when they ask you to take, place, open, buy, sell, short or close a position (e.g. 'buy that NVDA put', 'short 0.07 NVDA perp'). derive: buy a put (exact instrument name such as NVDA-20261204-133-P, from price_derive_put) or trade a perp (NVDA-PERP). perps: a perp by ticker (NVDA, traded as NVDAUSDT; $5 minimum order); sell opens or adds to a short, buy only buys back a short (reduce-only). amount = contracts (derive) or units (perps). Nothing executes until the user presses Approve.", schema: z.object({ venue: z.enum(['perps', 'derive']), instrument: z.string().min(2).max(40), side: z.enum(['buy', 'sell']), amount: z.number().positive().max(1_000_000) }) }),
 
     tool(async () => {
       ctx.steps.push({ tool: 'get_derive_subaccounts', label: 'Read your Derive subaccounts' });
@@ -310,7 +310,7 @@ function makeTools(ctx: Ctx): StructuredToolInterface[] {
         ctx.ui.showPending = true;
         return ok(ctx, [{ label: 'Margin move', value: `${spec.amountUsd} USDC from ${spec.fromLabel} to ${spec.toLabel}: ${r.duplicate ? 'already waiting' : 'created'} (status ${r.status}). It is NOT moved yet: it runs only when the user presses Approve below, in every mode. The agent re-checks both balances, the per-move cap and the kill switch then.` }], 'The request card with Approve and Reject is shown below the answer.');
       } catch (e) { return ok(ctx, [{ label: 'Margin move', value: `not created: ${e instanceof Error ? e.message : String(e)}` }]); }
-    }, { name: 'propose_margin_move', description: "Ask to move USDC margin between the user's OWN Derive subaccounts (e.g. 'move 200 from my NVDA account to main'). from/to = a subaccount id, 'main', a universe name (RWA, PRIME, MIDCAP, ALT) or a ticker held there (NVDA). Creates a request with Approve and Reject; nothing moves until they press Approve, in every mode. Call get_derive_subaccounts first if you are unsure which account they mean. Only Derive subaccount-to-subaccount moves are supported here, not Lighter, withdrawals or other wallets.", schema: z.object({ from: z.string().min(1).max(40), to: z.string().min(1).max(40), amountUsd: z.number().min(1).max(1_000_000) }) }),
+    }, { name: 'propose_margin_move', description: "Ask to move USDC margin between the user's OWN Derive subaccounts (e.g. 'move 200 from my NVDA account to main'). from/to = a subaccount id, 'main', a universe name (RWA, PRIME, MIDCAP, ALT) or a ticker held there (NVDA). Creates a request with Approve and Reject; nothing moves until they press Approve, in every mode. Call get_derive_subaccounts first if you are unsure which account they mean. Only Derive subaccount-to-subaccount moves are supported here, not perps, withdrawals or other wallets.", schema: z.object({ from: z.string().min(1).max(40), to: z.string().min(1).max(40), amountUsd: z.number().min(1).max(1_000_000) }) }),
     tool(async ({ universe, amountUsd, from }: { universe: string; amountUsd: number; from?: string }) => {
       ctx.steps.push({ tool: 'propose_enable_subaccount', label: `Prepared enabling the ${universe.toUpperCase()} subaccount for your approval` });
       if (!ctx.req.signedIn) return ok(ctx, [{ label: 'Enable subaccount', value: 'not created: you are not signed in. Sign in with your wallet, then ask again.' }]);
@@ -331,7 +331,8 @@ function makeTools(ctx: Ctx): StructuredToolInterface[] {
       } catch (e) { return ok(ctx, [{ label: 'Enable subaccount', value: `not created: ${e instanceof Error ? e.message : String(e)}` }]); }
     }, { name: 'propose_enable_subaccount', description: "Open a new Derive subaccount for a risk universe the user has not enabled yet (e.g. RWA for NVDA/US500/gold options, PRIME for crypto), funded by moving USDC from one of their own subaccounts. Creates a request with Approve and Reject; nothing happens until they approve. `from` is optional (default: the subaccount with the most free USDC, including the fallback).", schema: z.object({ universe: z.string().min(2).max(20), amountUsd: z.number().min(1).max(1_000_000), from: z.string().max(40).optional() }) }),
 
-    tool(async ({ direction, venue, account, amountUsd }: { direction: 'add' | 'withdraw'; venue: 'lighter' | 'derive'; account?: string; amountUsd: number }) => {
+    tool(async ({ direction, venue: v, account, amountUsd }: { direction: 'add' | 'withdraw'; venue: 'perps' | 'derive'; account?: string; amountUsd: number }) => {
+      const venue = v === 'derive' ? 'derive' as const : 'aster' as const;
       ctx.steps.push({ tool: 'propose_fund_move', label: `Prepared ${direction === 'add' ? 'adding' : 'withdrawing'} $${amountUsd} for your approval` });
       if (!ctx.req.signedIn) return ok(ctx, [{ label: 'Funds move', value: 'not created: you are not signed in. Sign in with your wallet, then ask again.' }]);
       try {
@@ -343,15 +344,15 @@ function makeTools(ctx: Ctx): StructuredToolInterface[] {
         const why = await withScratchStore(async () => checkCandidate(c, s)); if (why) return ok(ctx, [{ label: 'Funds move', value: `not created: ${why}. Nothing was moved.` }]);
         const r = await postActionToApp(fundRequest(s, spec, c));
         ctx.ui.showPending = true;
-        return ok(ctx, [{ label: 'Funds move', value: `${direction === 'add' ? 'Add' : 'Withdraw'} $${spec.amountUsd} ${direction === 'add' ? 'to' : 'from'} ${spec.label}: ${r.duplicate ? 'already waiting' : 'created'} (status ${r.status}). It is NOT moved yet: it runs only when the user presses Approve below, in every mode. ${direction === 'withdraw' ? 'A withdrawal lands in their Ethereum wallet, not on BNB Chain, and takes about 14 to 26 minutes. ' : 'The money comes from their BNB wallet cash (USDC/USDT) within the allowance they gave the agent. '}Caps, reserve and kill switch are re-checked at approval.` }], 'The request card with Approve and Reject is shown below the answer.');
+        return ok(ctx, [{ label: 'Funds move', value: `${direction === 'add' ? 'Add' : 'Withdraw'} $${spec.amountUsd} ${direction === 'add' ? 'to' : 'from'} ${spec.label}: ${r.duplicate ? 'already waiting' : 'created'} (status ${r.status}). It is NOT moved yet: it runs only when the user presses Approve below, in every mode. ${direction === 'withdraw' ? 'A withdrawal lands in their Ethereum wallet, not on BNB Chain, and takes about 14 minutes. ' : `The money comes from their BNB wallet cash (USDC/USDT) within the allowance they gave the agent${venue === 'aster' ? '; it is deposited on BNB Chain (no bridge)' : ''}. `}Caps, reserve and kill switch are re-checked at approval.` }], 'The request card with Approve and Reject is shown below the answer.');
       } catch (e) { return ok(ctx, [{ label: 'Funds move', value: `not created: ${e instanceof Error ? e.message : String(e)}` }]); }
-    }, { name: 'propose_fund_move', description: "Ask to move money between the user's BNB wallet and a venue account they have set up on the Risk page: direction 'add' puts USDC from their BNB wallet into Lighter or Derive (bridged and deposited); 'withdraw' takes idle margin out of Lighter or Derive to their own Ethereum wallet. account = 'main' or the account number from their set-up accounts (omit if they have one). Creates a request with Approve and Reject; nothing moves until they press Approve, in every mode. Use it for 'add $500 to Lighter', 'top up my Derive account', 'take $300 out of Lighter'. It never sells bStocks. Moving between two Derive subaccounts is propose_margin_move. Lighter to Derive directly, or back to BNB Chain, is not supported (withdrawals land on Ethereum): say so plainly.", schema: z.object({ direction: z.enum(['add', 'withdraw']), venue: z.enum(['lighter', 'derive']), account: z.string().max(40).optional(), amountUsd: z.number().min(1).max(1_000_000) }) }),
+    }, { name: 'propose_fund_move', description: "Ask to move money between the user's BNB wallet and a venue account they have set up on the Risk page: direction 'add' puts USDC from their BNB wallet into the perps account (swapped to USDT and deposited on BNB Chain, no bridge) or a Derive subaccount (bridged and deposited); 'withdraw' takes idle margin out of a Derive subaccount to their own Ethereum wallet. The agent cannot withdraw from perps: that needs the user's own wallet signature in the app, so say so plainly. account = 'main' or the account number from their set-up accounts (omit if they have one). Creates a request with Approve and Reject; nothing moves until they press Approve, in every mode. Use it for 'add $500 to my perps account', 'top up my Derive account', 'take $300 out of my Derive account'. It never sells bStocks. Moving between two Derive subaccounts is propose_margin_move. Perps to Derive directly, or Derive back to BNB Chain, is not supported (Derive withdrawals land on Ethereum): say so plainly.", schema: z.object({ direction: z.enum(['add', 'withdraw']), venue: z.enum(['perps', 'derive']), account: z.string().max(40).optional(), amountUsd: z.number().min(1).max(1_000_000) }) }),
 
     tool(async ({ tickers }: { tickers?: string[] }) => {
       ctx.steps.push({ tool: 'get_market_data', label: 'Looked up market data' });
       const want = (tickers?.length ? tickers : Object.keys(MARKETS)).map((t) => t.toUpperCase());
-      return ok(ctx, want.map((t) => { const m = MARKETS[t]; return { label: `${t} market`, value: m ? `spot ${usd(m.spot)}, daily volatility ${(m.sigma * 100).toFixed(1)}%, Lighter perp ${m.perp !== null ? 'yes' : 'no'}, Derive put ${m.put !== null ? `yes (implied volatility ${Math.round(m.put * 100)}%)` : 'no'}` : 'not in the agent market table' }; }), "These are the agent's market table values, used for tests; live runs read prices from the venues.");
-    }, { name: 'get_market_data', description: "Spot, daily volatility and which hedge markets (Lighter perp, Derive put) exist, per ticker, from the agent's market table.", schema: z.object({ tickers: z.array(z.string().max(8)).max(12).optional() }) }),
+      return ok(ctx, want.map((t) => { const m = MARKETS[t]; return { label: `${t} market`, value: m ? `spot ${usd(m.spot)}, daily volatility ${(m.sigma * 100).toFixed(1)}%, perp ${m.perp ? 'yes' : 'no'}, Derive put ${m.put !== null ? `yes (implied volatility ${Math.round(m.put * 100)}%)` : 'no'}` : 'not in the agent market table' }; }), "These are the agent's market table values, used for tests; live runs read prices from the venues.");
+    }, { name: 'get_market_data', description: "Spot, daily volatility and which hedge markets (perp, Derive put) exist, per ticker, from the agent's market table.", schema: z.object({ tickers: z.array(z.string().max(8)).max(12).optional() }) }),
     tool(async () => {
       ctx.steps.push({ tool: 'get_context', label: 'Checked the agent state' });
       const s = await ctx.ensureSnapshot(); const st = buildStatus(s); const rec = ctx.req.recorded; const pend = rec.actions.filter((a) => a.status === 'pending').length;

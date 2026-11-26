@@ -3,6 +3,7 @@ import { config } from '../config';
 import type { Candidate, Snapshot } from '../types';
 import type { ActionPost } from './appApi';
 import { describeSteps } from './executor';
+import { legKeyOf } from './hedgeLeg';
 import { payoffForChoice } from '../risk/payoff';
 import { alternativesFor } from '../risk/alternatives';
 
@@ -16,13 +17,13 @@ const pct = (bps: number | null | undefined) => (bps === null || bps === undefin
 export const slotOf = (c: Candidate) => (c.kind === 'hedge' ? `hedge:${c.hedge!.key ?? c.hedge!.market}` : `${c.kind}:${c.ruleKey}`);
 
 export function titleOf(c: Candidate): string {
-  if (c.kind === 'top_up') return `Add ${usd(c.amountBaseUnit)} to your ${c.venue === 'lighter' ? 'Lighter' : 'Derive'} margin`;
-  if (c.kind === 'release') return `Withdraw ${usd(c.amountBaseUnit)} of idle margin from ${c.venue === 'lighter' ? 'Lighter' : 'Derive'}`;
+  if (c.kind === 'top_up') return `Add ${usd(c.amountBaseUnit)} to your ${c.venue === 'derive' ? 'options' : 'perps'} margin`;
+  if (c.kind === 'release') return `Withdraw ${usd(c.amountBaseUnit)} of idle margin from ${c.venue === 'derive' ? 'options' : 'perps'}`;
   const o = c.hedge!.option; const roll = c.hedge!.derive?.roll;
   if (o) return `${roll ? 'Roll' : 'Buy'} ${o.contracts} ${c.hedge!.market} put${o.contracts === 1 ? '' : 's'} (strike ${o.strike}) on Derive to protect ${c.hedge!.bstock}`.slice(0, 160);
   const d = c.hedge!.deltaToShort;
   const w = c.plan ? ` ($${c.plan.sizeUsd})` : '';
-  const where = c.hedge!.venue === 'derive' ? 'Derive' : 'Lighter';
+  const where = c.hedge!.venue === 'derive' ? 'Derive' : 'perps';
   return d > 0 ? `Sell ${Math.abs(d)} ${c.hedge!.market} short on ${where}${w} to hedge ${c.hedge!.bstock}` : `Buy back ${Math.abs(d)} ${c.hedge!.market} short on ${where}${w} (reduce hedge)`;
 }
 
@@ -60,7 +61,7 @@ export function buildActionRequest(s: Snapshot, c: Candidate, deciderReason: str
     wallet: s.wallet, network: s.network, kind: c.kind, venue: c.venue, origin: 'rule', slot,
     title: titleOf(c).slice(0, 160), why, helps: helpsOf(c, s).slice(0, 500),
     willDo: describeSteps(s, c).map((x) => x.slice(0, 300)).slice(0, 8),
-    detail: { candidateId: c.id, kind: c.kind, ruleKey: c.ruleKey ?? null, amountBaseUnit: c.amountBaseUnit, hedgeMarket: c.hedge?.market ?? null, hedgeKey: c.hedge ? (c.hedge.key ?? `lighter:${c.hedge.marketId}`) : null, hedgeDelta: c.hedge?.deltaToShort ?? null, optionContracts: c.hedge?.option?.contracts ?? null },
+    detail: { candidateId: c.id, kind: c.kind, ruleKey: c.ruleKey ?? null, amountBaseUnit: c.amountBaseUnit, hedgeMarket: c.hedge?.market ?? null, hedgeKey: c.hedge ? legKeyOf(c.hedge) : null, hedgeDelta: c.hedge?.deltaToShort ?? null, optionContracts: c.hedge?.option?.contracts ?? null },
     ...(c.plan ? { plan: clampPlan(c.plan) } : {}),
     // Every hedge request carries its payoff (before/after) and the venues considered with why each was or was not used.
     ...(c.kind === 'hedge' ? (() => { const po = payoffForChoice(s, c); const alts = alternativesFor(s, c); return { ...(po ? { payoff: po } : {}), ...(alts.length ? { alternatives: alts } : {}) }; })() : {}),

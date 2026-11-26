@@ -10,7 +10,7 @@ import { DEFAULT_EVENT_GAP, PERP_FEE_ROUNDTRIP, Z99, loss99, maxSafeLeverage, po
 
 // Turns the user's loss limit into a hedge plan: exposure per ticker, the VaR99 for the day or the next event, the
 // smallest hedge that respects the limit, and for each trade the cost, margin plan, validity and worst case.
-// Every instrument is considered for every name (Derive put, Lighter perp, proxy perp) and the cheapest per unit of
+// Every instrument is considered for every name (Derive put, perp, proxy perp) and the cheapest per unit of
 // risk removed comes first. When the sized hedge breaks a cap, budget, allowance or margin limit it is SHRUNK to the
 // largest size that fits, never dropped, and the one constraint that bound is named with its numbers.
 // Pure given a Snapshot: no network, no LLM. Every number on the proposal card comes from here.
@@ -29,10 +29,10 @@ const vp = (varPct: number, limitPct: number) => (Math.abs(varPct - limitPct) < 
 export type Instrument = 'perp' | 'put' | 'proxy';
 export interface TickerView extends Holding {
   excluded: boolean; fullyHedge: boolean; hedgedUsd: number; hedgedPct: number; bucket: 'direct' | 'proxy' | 'none';
-  /** Lighter perp market id for THIS ticker (null when it has no perp). */
-  marketId: number | null; price: number; qty: number; sigmaAssumed: boolean;
+  /** Perps market (ticker, e.g. NVDA = NVDAUSDT) for THIS name (null when it has no perp). */
+  perpMarket: string | null; price: number; qty: number; sigmaAssumed: boolean;
   /** Which instrument the plan uses for this name, and what is available. null = nothing can hedge it. */
-  instrument: Instrument | null; perpOk: boolean; putOk: boolean; proxyVia: { ticker: string; beta: number; marketId: number; price: number; sigmaDay: number } | null;
+  instrument: Instrument | null; perpOk: boolean; putOk: boolean; proxyVia: { ticker: string; beta: number; price: number; sigmaDay: number } | null;
   putCostFraction: number | null; costFrac: number; heldPutUsd: number;
   /** Raw short on the perp (USD) and the part of it above the holding (a net short). */
   shortUsd: number; netShortUsd: number;
@@ -62,9 +62,8 @@ export interface RiskView {
 }
 export interface HedgePlanResult { candidates: Candidate[]; rejected: RejectedCandidate[]; risk: RiskView | null }
 
-/** Hedge legs the loss-limit solver can handle: Lighter perps with a market id. */
-export type LighterLeg = HedgeLeg & { marketId: number };
-export const lighterLegs = (h: Pick<AgentConfig['hedge'], 'legs'>): LighterLeg[] => h.legs.filter((l): l is LighterLeg => l.venue === 'lighter' && l.kind === 'perp' && l.marketId !== undefined);
+/** Hedge legs the loss-limit solver can handle: perps (Aster) legs, keyed by ticker. */
+export const perpLegs = (h: Pick<AgentConfig['hedge'], 'legs'>): HedgeLeg[] => h.legs.filter((l) => l.venue === 'aster' && l.kind === 'perp');
 const putLegs = (h: Pick<AgentConfig['hedge'], 'legs'>): HedgeLeg[] => h.legs.filter((l) => l.venue === 'derive' && l.kind === 'put');
 const key = (...p: (string | number)[]) => createHash('sha256').update(p.join('|')).digest('hex').slice(0, 24);
 
@@ -74,7 +73,7 @@ export function assessRisk(s: Snapshot, now = new Date()): RiskView | null {
   if (!cfg.hedge.enabled) return null;
   const held = s.bsc.bstocks.filter((b) => b.qty > 0 && b.value > 0);
   if (!held.length || !s.market) return null;
-  const perpLeg = new Map(lighterLegs(cfg.hedge).map((l) => [tickerOf(l.bstock), l]));
+  const perpLeg = new Map(perpLegs(cfg.hedge).map((l) => [tickerOf(l.bstock), l]));
   const putLeg = new Map(putLegs(cfg.hedge).map((l) => [tickerOf(l.bstock), l]));
   const proxyMap = cfg.risk.proxyMap ?? {};
   const exclude = new Set(cfg.risk.excludeTickers); const fully = new Set(cfg.risk.fullyHedgeTickers);
@@ -98,10 +97,10 @@ export function assessRisk(s: Snapshot, now = new Date()): RiskView | null {
     const pm = proxyMap[ticker]; const vleg = pm ? perpLeg.get(pm.via) : undefined;
     const sigVia = pm ? s.market!.sigmaDay[pm.via] : undefined; const pxVia = pm ? s.proxyPrices?.[pm.via] : undefined;
     // Offered for every name that has one (shown as an alternative); traded only when no perp or put exists (instrument below).
-    const proxyVia = pm && vleg && sigVia && pxVia ? { ticker: pm.via, beta: pm.beta, marketId: vleg.marketId, price: pxVia, sigmaDay: sigVia } : null;
+    const proxyVia = pm && vleg && sigVia && pxVia ? { ticker: pm.via, beta: pm.beta, price: pxVia, sigmaDay: sigVia } : null;
     const unassessed = known === undefined && (perpOk || putOk || !!pm) ? (s.unassessed?.[ticker] ?? 'no volatility or price from the venue feed') : null;
     const heldPutUsd = (s.heldPuts ?? []).filter((p) => p.ticker === ticker && Date.parse(p.expiry) > now.getTime()).reduce((a, p) => a + p.notionalUsd, 0);
-    const pos = leg ? (s.lighterPositions[leg.marketId] ?? 0) : 0;
+    const pos = leg ? (s.perpPositions[leg.market] ?? 0) : 0;
     const shortUsd = Math.max(0, -pos) * price;
     const hedgedUsd = leg ? Math.min(b.value, shortUsd + heldPutUsd) : Math.min(b.value, heldPutUsd);
     const gap = ev ? (ev.gapPct !== undefined ? ev.gapPct / 100 : Math.max(DEFAULT_EVENT_GAP[ev.kind], Z99 * sigmaDay)) : undefined;
@@ -121,14 +120,14 @@ export function assessRisk(s: Snapshot, now = new Date()): RiskView | null {
           // Neither the bridge to Derive nor a premium already there is guaranteed: compare what each route can cover before the event.
           const bnbAvail = Math.max(0, Math.min(s.bsc.usdcUsd - Number(BigInt(cfg.rebalance.keepBscReserveBaseUnit)) / 1e6, Number(BigInt(s.bsc.allowanceUsdcBase)) / 1e6));
           const lev = maxSafeLeverage(loss99({ sigmaDay, gap }, !!ev), cfg.limits.maxLeverage);
-          const perpCover = ((s.lighterMain?.freeUsd ?? 0) + ((s.bridgeEtaSec ?? 1200) * 1000 < toEvent ? bnbAvail : 0)) * lev;
+          const perpCover = ((s.perpMain?.freeUsd ?? 0) + ((s.perpEtaSec ?? 60) * 1000 < toEvent ? bnbAvail : 0)) * lev;
           const putCover = ((s.deriveFree?.freeUsd ?? 0) * 0.97) / Math.max(1e-6, putCostFraction);
           if (perpCover > putCover) { instrument = 'perp'; putSkipped = `a put cannot be paid for in time (the Derive bridge takes ${Math.round((s.deriveEtaSec ?? 1800) / 60)} min and the event is in ${Math.max(0, Math.round(toEvent / 60_000))} min, with only ${m((s.deriveFree?.freeUsd ?? 0))} already on Derive)`; }
         }
       } else if (instrument === 'put') instrument = perpOk ? 'perp' : null;
     }
     const costFrac = instrument === 'put' ? (putCostFraction ?? 0.03) : PERP_FEE_ROUNDTRIP;
-    return { instrument, perpOk, putOk, proxyVia, putCostFraction, costFrac, heldPutUsd, ticker, bstock: b.symbol, usd: b.value, sigmaDay, gap, excluded: exclude.has(ticker), fullyHedge: fully.has(ticker), hedgedUsd, hedgedPct: pctOf(hedgedUsd, b.value), bucket, marketId: leg?.marketId ?? null, price, qty: b.qty, sigmaAssumed: known === undefined, shortUsd, netShortUsd: Math.max(0, shortUsd - b.value), unassessed, putSkipped };
+    return { instrument, perpOk, putOk, proxyVia, putCostFraction, costFrac, heldPutUsd, ticker, bstock: b.symbol, usd: b.value, sigmaDay, gap, excluded: exclude.has(ticker), fullyHedge: fully.has(ticker), hedgedUsd, hedgedPct: pctOf(hedgedUsd, b.value), bucket, perpMarket: leg?.market ?? null, price, qty: b.qty, sigmaAssumed: known === undefined, shortUsd, netShortUsd: Math.max(0, shortUsd - b.value), unassessed, putSkipped };
   });
 
   const hedgeable = new Set(tickers.filter((t) => t.instrument !== null && !t.sigmaAssumed && !t.unassessed).map((t) => t.ticker));
@@ -148,7 +147,7 @@ export function assessRisk(s: Snapshot, now = new Date()): RiskView | null {
   const base = {
     holdings: tickers, existingHedgeUsd: Object.fromEntries(tickers.map((t) => [t.ticker, t.hedgedUsd])), limitPct: cfg.risk.lossTolerancePct, rho: cfg.risk.correlation,
     residual, costFrac: Object.fromEntries(tickers.map((t) => [t.ticker, t.costFrac])), capFrac, premFrac,
-    capitalRoom: Math.max(0, lim.maxCapitalOffBnbUsd - parkedOffBnb(s)) + (s.lighterMain?.freeUsd ?? 0) + (s.deriveFree?.freeUsd ?? 0),
+    capitalRoom: Math.max(0, lim.maxCapitalOffBnbUsd - parkedOffBnb(s)) + (s.perpMain?.freeUsd ?? 0) + (s.deriveFree?.freeUsd ?? 0),
     budgetUsd: (cfg.risk.premiumBudgetWeeklyPct / 100) * Pv,
     event: window === 'event', hedgeable, excluded: exclude, fullyHedge: fully,
     priority: new Set(tickers.filter((t) => !!activeEvents[t.ticker] && hedgeable.has(t.ticker)).map((t) => t.ticker)),
@@ -207,15 +206,15 @@ export function planHedges(s: Snapshot, risk: RiskView, now = new Date()): Hedge
   const cfg = s.config; const lim = cfg.limits; const out: Candidate[] = []; const rejected: RejectedCandidate[] = [];
   const sol = risk.solution; const P = risk.portfolioUsd;
   const budgetWeekly = (cfg.risk.premiumBudgetWeeklyPct / 100) * P;
-  const eta = s.bridgeEtaSec ?? 1500;
+  const eta = s.perpEtaSec ?? 60;
   const sh: Shared = {
     budgetLeft: budgetWeekly, dayLeft: Math.max(0, lim.maxNotionalPerDayUsd - (s.today?.notionalUsd ?? 0)),
     offBnbRoom: Math.max(0, lim.maxCapitalOffBnbUsd - parkedOffBnb(s)),
     bnbLeft: Math.max(0, Math.min(s.bsc.usdcUsd - Number(BigInt(cfg.rebalance.keepBscReserveBaseUnit)) / 1e6, Number(BigInt(s.bsc.allowanceUsdcBase)) / 1e6)),
-    freeMargin: s.lighterMain?.freeUsd ?? 0, deriveFree: s.deriveFree?.freeUsd ?? 0, cover: {},
+    freeMargin: s.perpMain?.freeUsd ?? 0, deriveFree: s.deriveFree?.freeUsd ?? 0, cover: {},
     decisionCap: effectiveMode(s, now).mode === 'autonomous' ? lim.maxNotionalPerTradeUsd : Infinity,
   };
-  const perpLegOf = (tk: string) => lighterLegs(cfg.hedge).find((l) => tickerOf(l.bstock) === tk);
+  const perpLegOf = (tk: string) => perpLegs(cfg.hedge).find((l) => tickerOf(l.bstock) === tk);
   const putLegOf = (tk: string) => putLegs(cfg.hedge).find((l) => tickerOf(l.bstock) === tk);
 
   for (const u of risk.unassessed) rejected.push({ kind: 'hedge', reason: `${u.ticker} is unassessed: ${u.why}. ${m(u.usd)} of it is not planned until a fresh price arrives; the other names are not affected`, severity: 'error' });
@@ -238,25 +237,25 @@ export function planHedges(s: Snapshot, risk: RiskView, now = new Date()): Hedge
     const current = t.hedgedUsd;
     // Net short on the hedge market: a LONG counts as negative, so opening the hedge also closes it. Raw, not capped at the holding.
     const px = t.proxyVia;
-    const net = t.instrument === 'proxy' && px ? (-(s.lighterPositions[px.marketId] ?? 0) * px.price) / ((px.beta * t.sigmaDay) / px.sigmaDay) : (t.marketId !== null ? -(s.lighterPositions[t.marketId] ?? 0) * t.price : 0) + t.heldPutUsd;
+    const net = t.instrument === 'proxy' && px ? (-(s.perpPositions[px.ticker] ?? 0) * px.price) / ((px.beta * t.sigmaDay) / px.sigmaDay) : (t.perpMarket !== null ? -(s.perpPositions[t.perpMarket] ?? 0) * t.price : 0) + t.heldPutUsd;
     const drift = target > 0 ? Math.abs(target - net) / target * 100 : net > 0 ? 100 : 0;
     if (drift <= cfg.hedge.driftThresholdPct) { if (target > 0 || net > 0) rejected.push({ kind: 'hedge', reason: `${t.ticker}: hedge is in band (${drift.toFixed(1)}% off, threshold ${cfg.hedge.driftThresholdPct}%), no trade`, severity: 'info' }); continue; }
 
     let putFailed = false;
     if (t.instrument === 'put') {
-      const leg = { market: t.ticker, marketId: pl?.marketId ?? -1, bstock: t.bstock, key: pl ? `lighter:${pl.marketId}` : `derive-put:${t.ticker}` };
+      const leg = { market: t.ticker, bstock: t.bstock, key: pl ? `aster:${pl.market}` : `derive-put:${t.ticker}` };
       const r = planPut(s, risk, t, leg, target, current, now, sh);
       if (r.candidate) { out.push(r.candidate); continue; }
-      // No put can be bought (too slow to fund, over budget, thin book): say why, then fall back to a perp when Lighter can carry it.
-      if (r.rejected) rejected.push({ ...r.rejected, ...(pl ? { reason: `${r.rejected.reason}. Trying a Lighter perp instead` } : {}), severity: 'error' });
+      // No put can be bought (too slow to fund, over budget, thin book): say why, then fall back to a perp when the perps venue can carry it.
+      if (r.rejected) rejected.push({ ...r.rejected, ...(pl ? { reason: `${r.rejected.reason}. Trying a perp instead` } : {}), severity: 'error' });
       if (!pl || t.heldPutUsd > 0) continue;
       putFailed = true;
       // The target was solved for a put (part of the cover is the premium lost); a perp covers the full amount, so it needs less.
       target *= 1 - Math.min(1, (t.putCostFraction ?? 0) / Math.max(1e-9, loss99(t, !!risk.activeEvents[t.ticker])));
     }
-    const mk = t.instrument === 'proxy' && px ? { market: px.ticker, marketId: px.marketId, price: px.price, ratio: (px.beta * t.sigmaDay) / px.sigmaDay, proxy: true as const }
-      : { market: t.ticker, marketId: t.marketId as number, price: t.price, ratio: 1, proxy: false as const };
-    if (mk.marketId === null || mk.marketId === undefined) continue;
+    const mk = t.instrument === 'proxy' && px ? { market: px.ticker, price: px.price, ratio: (px.beta * t.sigmaDay) / px.sigmaDay, proxy: true as const }
+      : { market: t.perpMarket ?? t.ticker, price: t.price, ratio: 1, proxy: false as const };
+    if (!mk.proxy && t.perpMarket === null) continue;
     const bstockForLeg = t.bstock;
 
     let deltaUsd = target - net;                                        // covered USD: > 0 sell more short (or close a long first), < 0 buy back
@@ -266,16 +265,16 @@ export function planHedges(s: Snapshot, risk: RiskView, now = new Date()): Hedge
     const lev = maxSafeLeverage(levGap, lim.maxLeverage);
     const binding: string[] = [];
     const assumptions: string[] = [
-      `Volatility ${(t.sigmaDay * 100).toFixed(2)}% a day from Lighter hourly candles; 99% loss = ${Z99} x daily volatility${event ? `, replaced by the ${(gapNow * 100).toFixed(1)}% event gap for ${t.ticker}` : ''}.`,
+      `Volatility ${(t.sigmaDay * 100).toFixed(2)}% a day from perps hourly prices; 99% loss = ${Z99} x daily volatility${event ? `, replaced by the ${(gapNow * 100).toFixed(1)}% event gap for ${t.ticker}` : ''}.`,
       `Stocks are assumed to be ${Math.round(cfg.risk.correlation * 100)}% correlated for the portfolio loss.`,
       `Perp cost is about ${PERP_FEE_ROUNDTRIP * 10_000} bps round trip in taker fees; funding is not included and can be paid or received.`,
       `A ${(maxSafeLeverage(gapNow, 99) < lim.maxLeverage ? 'safety' : 'your')} leverage cap of ${lev}x keeps a ${(gapNow * 100).toFixed(1)}% gap under about 30% of posted margin.`,
     ];
     if (mk.proxy && px) assumptions.unshift(`PROXY hedge: ${t.ticker} has no market of its own, so ${px.ticker} is shorted instead (correlation ${px.beta}, sized by ${px.beta} x the volatility ratio). About ${Math.round(Math.sqrt(1 - px.beta ** 2) * 100)}% of ${t.ticker}'s risk stays.`);
     const putPct = putCostFraction(t.sigmaDay) * 100;
-    assumptions.push(`A 1-week ATM put would cost about ${putPct.toFixed(1)}% of notional (about ${m(Math.abs(deltaUsd) * putPct / 100)}) and needs no monitoring, ${putFailed ? 'but none could be bought in time or within your limits' : t.putSkipped ? `but ${t.putSkipped}` : t.putOk ? 'but a perp was chosen' : 'but no listed put covers this name'}, so this plan uses a Lighter perp that needs monitoring and margin.`);
+    assumptions.push(`A 1-week ATM put would cost about ${putPct.toFixed(1)}% of notional (about ${m(Math.abs(deltaUsd) * putPct / 100)}) and needs no monitoring, ${putFailed ? 'but none could be bought in time or within your limits' : t.putSkipped ? `but ${t.putSkipped}` : t.putOk ? 'but a perp was chosen' : 'but no listed put covers this name'}, so this plan uses a perp that needs monitoring and margin.`);
 
-    // ---- fit the hedge to every constraint: daily cap, then margin (Lighter free, then BNB through the allowance, the off-BNB cap and the bridge time)
+    // ---- fit the hedge to every constraint: daily cap, then margin (perps free margin, then BNB through the allowance, the off-BNB cap and the deposit time)
     const hedgeUsdOf = (covered: number) => covered * mk.ratio;
     if (deltaUsd > 0) {
       if (hedgeUsdOf(deltaUsd) > sh.dayLeft) { binding.push(`daily notional cap: ${m(lim.maxNotionalPerDayUsd)} per day, ${m(sh.dayLeft)} left`); deltaUsd = sh.dayLeft / mk.ratio; }
@@ -292,23 +291,23 @@ export function planHedges(s: Snapshot, risk: RiskView, now = new Date()): Hedge
         const bridgeable = etaOk ? Math.min(byAllowance, byRoom) : 0;
         const available = sh.freeMargin + bridgeable;
         if (available < need) {
-          const why = !etaOk && byAllowance > 0 && byRoom > 0 ? `bridge time: the ${Math.round(eta / 60)} min bridge to Lighter is slower than the ${Math.round(timeToEvent / 60_000)} min to the ${risk.activeEvents[t.ticker]?.kind ?? 'event'}`
-            : byRoom <= byAllowance ? `off-BNB cap: ${m(lim.maxCapitalOffBnbUsd)} allowed, ${m(sh.offBnbRoom)} left, so at most ${m(sh.freeMargin + byRoom)} of margin can sit on Lighter`
+          const why = !etaOk && byAllowance > 0 && byRoom > 0 ? `deposit time: the ${Math.round(eta / 60)} min margin deposit to perps is slower than the ${Math.round(timeToEvent / 60_000)} min to the ${risk.activeEvents[t.ticker]?.kind ?? 'event'}`
+            : byRoom <= byAllowance ? `off-BNB cap: ${m(lim.maxCapitalOffBnbUsd)} allowed, ${m(sh.offBnbRoom)} left, so at most ${m(sh.freeMargin + byRoom)} of margin can sit on perps`
             : `allowance: only ${m(sh.bnbLeft)} of your BNB USDC can be used (allowance ${m(Number(BigInt(s.bsc.allowanceUsdcBase)) / 1e6)}, reserve kept)`;
           binding.push(why);
-          if (available * lev / mk.ratio < 1) { rejected.push({ kind: 'hedge', reason: `${t.ticker}: needs ${m(need, 0)} of margin on Lighter; ${why}. Options: raise that limit, or accept a higher loss than ${risk.limitPct}%`, severity: 'error' }); continue; }
+          if (available * lev / mk.ratio < 1) { rejected.push({ kind: 'hedge', reason: `${t.ticker}: needs ${m(need, 0)} of margin on perps; ${why}. Options: raise that limit, or accept a higher loss than ${risk.limitPct}%`, severity: 'error' }); continue; }
           deltaUsd = (available * lev) / mk.ratio;
           assumptions.push(`This is the largest hedge that fits: ${why}.`);
         }
         const needNow = hedgeUsdOf(deltaUsd) / lev;
         const move = bridgeable > 0 && needNow > sh.freeMargin ? r2((needNow - sh.freeMargin) * 1.05) : 0;
-        if (move > 0) { marginMove = { moveUsd: move, from: 'BNB wallet (USDC)', to: 'Lighter main account', etaSec: Math.round(eta) }; sh.bnbLeft -= move; sh.offBnbRoom -= move; }
+        if (move > 0) { marginMove = { moveUsd: move, from: 'BNB wallet (USDC)', to: 'perps account', etaSec: Math.round(eta) }; sh.bnbLeft -= move; sh.offBnbRoom -= move; }
         idleMargin = r2(needNow); sh.freeMargin = Math.max(0, sh.freeMargin - needNow);
       }
     }
     // ---- lots: round UP to the venue's size step when the margin and caps allow, so the order reaches the target instead of stopping just short
-    const mm = s.marketMins?.[mk.marketId];
-    const stepOf = (qty: number) => (mm ? 10 ** -mm.sizeDecimals : qty >= 10 ? 1 : 0.01);
+    const mm = s.marketMins?.[mk.market];
+    const stepOf = (qty: number) => (mm ? mm.step : qty >= 10 ? 1 : 0.01);
     let hedgeNotional = hedgeUsdOf(Math.abs(deltaUsd));
     if (hedgeNotional > 0) {
       const step = stepOf(hedgeNotional / mk.price);
@@ -346,13 +345,13 @@ export function planHedges(s: Snapshot, risk: RiskView, now = new Date()): Hedge
     const heldUnits = t.qty; const shortUnits = t.shortUsd / t.price;
     const view: HedgePlanView = {
       ...viewCommon(risk, t, mk.proxy ? afterThis : afterThis, binding, orders),
-      portfolioUsd: r2(P), instrument: (mk.proxy ? `Short ${mk.market} perp (PROXY for ${t.ticker}) on Lighter` : `Short ${t.ticker} perp on Lighter`).slice(0, 80), venue: 'lighter', ticker: t.ticker, sizeUsd: r2(runNotional), leverage: lev,
+      portfolioUsd: r2(P), instrument: (mk.proxy ? `Short ${mk.market} perp (PROXY for ${t.ticker})` : `Short ${t.ticker} perp`).slice(0, 80), venue: 'aster', ticker: t.ticker, sizeUsd: r2(runNotional), leverage: lev,
       limitPct: risk.limitPct, varBeforePct: r2(sol.varNow * 100), varAfterPct: r2(varThis * 100), requiredHedgePct: r2(sol.requiredHedgeRatio * 100), window: risk.window,
       cost: { feesUsd: r2(runNotional * PERP_FEE_ROUNDTRIP), premiumUsd: 0, fundingEstUsd: 0, idleMarginUsd: idleMargin, weeklyBudgetUsd: r2(budgetWeekly) },
       marginPlan: marginMove, gapUpCostUsd: gapUpCost, marginUsedUsd: idleMargin, ...(options ? { options } : {}),
       validUntil: new Date(Math.min(now.getTime() + PLAN_VALID_MS, risk.activeEvents[t.ticker] ? Date.parse(risk.activeEvents[t.ticker].at) : Infinity)).toISOString(),
       assumptions: assumptions.map((x) => x.slice(0, 300)).slice(0, 10),
-      invalidatedBy: [`${t.ticker} price moves more than about ${r2(Math.max(2, gapNow * 100 / 3))}% before you approve`, 'Your loss limit, leverage cap or notional limits change', 'The Lighter margin balance changes or the bridge slows down'],
+      invalidatedBy: [`${t.ticker} price moves more than about ${r2(Math.max(2, gapNow * 100 / 3))}% before you approve`, 'Your loss limit, leverage cap or notional limits change', 'The perps margin balance changes or the margin deposit slows down'],
       worstCase: deltaUsd > 0
         ? `A ${(gapNow * 100).toFixed(0)}% gap against the short costs about ${m(gapUpCost)} on ${m(notional)} (${m(idleMargin)} of margin at ${lev}x, ${Math.round((gapUpCost / Math.max(1, idleMargin)) * 100)}% of it). The short is liquidated if ${mk.market} rises about ${liqMove}% (${MAINTENANCE_MARGIN * 100}% maintenance margin assumed).`
         : removesNetShort ? `After the buyback the position is no longer net short: the risk of ${m(t.netShortUsd * loss99(t, false))} from the extra short goes away.` : `Buying back part of the short removes protection: the modelled worst case becomes ${vp(varThis * 100, risk.limitPct)}% of the portfolio.`,
@@ -361,13 +360,13 @@ export function planHedges(s: Snapshot, risk: RiskView, now = new Date()): Hedge
     const dir = deltaUsd > 0 ? 'sell (add to the short)' : 'buy back (reduce the short)';
     const heldText = t.shortUsd > 0 ? `You hold ${m(t.usd)} (${Math.round(heldUnits * 100) / 100} units) and are short ${m(t.shortUsd)} (${Math.round(shortUnits * 100) / 100} units)${t.netShortUsd > 0 ? `, so you are net short ${m(t.netShortUsd)}` : ''}.` : '';
     out.push({
-      id: `hedge:${mk.market}:${Math.round(deltaUsd)}${staged ? ':s1' : ''}`, kind: 'hedge', venue: 'lighter', amountBaseUnit: '0', notionalUsd: r2(runNotional),
-      explain: `Place a Lighter market order to ${dir} ${Math.abs(runQty)} ${mk.market} (${m(runNotional)}${staged ? `, step 1 of ${orders!.length}` : ''}${mk.proxy ? `, a proxy for ${t.ticker}` : ''}). ${heldText} Solved so the modelled worst case ${risk.window === 'event' ? 'around the event' : 'over a day'} stays within your ${risk.limitPct}% limit. Cost about ${m(fees, 2)}.${marginMove ? ` First moves ${m(marginMove.moveUsd, 2)} of margin from BNB to Lighter (about ${Math.round(marginMove.etaSec / 60)} min).` : ''}`.replace(/\s+/g, ' '),
+      id: `hedge:${mk.market}:${Math.round(deltaUsd)}${staged ? ':s1' : ''}`, kind: 'hedge', venue: 'aster', amountBaseUnit: '0', notionalUsd: r2(runNotional),
+      explain: `Place a perps market order to ${dir} ${Math.abs(runQty)} ${mk.market} (${m(runNotional)}${staged ? `, step 1 of ${orders!.length}` : ''}${mk.proxy ? `, a proxy for ${t.ticker}` : ''}). ${heldText} Solved so the modelled worst case ${risk.window === 'event' ? 'around the event' : 'over a day'} stays within your ${risk.limitPct}% limit. Cost about ${m(fees, 2)}.${marginMove ? ` First moves ${m(marginMove.moveUsd, 2)} of margin from BNB to perps (about ${Math.round(marginMove.etaSec / 60)} min).` : ''}`.replace(/\s+/g, ' '),
       reason: deltaUsd > 0
         ? `${t.ticker}: modelled 99% loss is ${vp(sol.varNow * 100, risk.limitPct)}% now (${r2(sol.varUnhedged * 100)}% with no hedge) against your ${risk.limitPct}% limit${event ? ` (${risk.activeEvents[t.ticker].kind} in ${r2((Date.parse(risk.activeEvents[t.ticker].at) - now.getTime()) / 3_600_000)}h)` : ''}; ${mk.proxy ? `short ${mk.market} as a proxy` : `raise the ${t.ticker} hedge from ${m(current)}`} toward ${m(target)}`
         : removesNetShort ? `${t.ticker}: you hold ${m(t.usd)} but are short ${m(t.shortUsd)}, so you are net short ${m(t.netShortUsd)} (about ${m(t.netShortUsd * loss99(t, false))} of 99% risk the other way). Buying back removes it`
         : `${t.ticker}: your ${t.ticker} hedge (${m(Math.max(0, net))}) is larger than the ${m(target)} needed to stay inside your ${risk.limitPct}% limit (modelled loss ${vp(sol.varNow * 100, risk.limitPct)}% now); trimming frees margin and cuts cost but reduces protection`,
-      hedge: { bstock: bstockForLeg, market: mk.market, marketId: mk.marketId, deltaToShort: runQty, driftPct: drift, ticker: t.ticker, targetUsd: r2(target), currentUsd: r2(Math.max(0, net)), key: `lighter:${mk.marketId}`, ...(mk.proxy ? { proxyFor: t.ticker } : {}), ...(removesNetShort ? { removesNetShort: true } : {}), ...(orderQtys && !staged ? { orderQtys } : {}) },
+      hedge: { bstock: bstockForLeg, market: mk.market, venue: 'aster', kind: 'perp', deltaToShort: runQty, driftPct: drift, ticker: t.ticker, targetUsd: r2(target), currentUsd: r2(Math.max(0, net)), key: `aster:${mk.market}`, ...(mk.proxy ? { proxyFor: t.ticker } : {}), ...(removesNetShort ? { removesNetShort: true } : {}), ...(orderQtys && !staged ? { orderQtys } : {}) },
       binding, plan: view, urgency: 1000 + (risk.window === 'event' ? 500 : 0) + Math.min(400, (sol.varNow - sol.varAfter) * 1000),
       idempotencyKey: `ag-${key(s.wallet, s.network, 'hedge', mk.market, Math.round(deltaUsd), Math.floor(now.getTime() / 300_000))}`,
     });
@@ -391,7 +390,7 @@ export function planHedges(s: Snapshot, risk: RiskView, now = new Date()): Hedge
 export const knownTickers = new Set(BSTOCKS_BSC.map((b) => b.underlying));
 
 /** A protective put on Derive for one ticker: no monitoring needed, loss capped at the premium. Premium is paid on Derive. */
-function planPut(s: Snapshot, risk: RiskView, t: TickerView, leg: { market: string; marketId: number; bstock: string; key: string }, target: number, current: number, now: Date, sh: Shared): { candidate?: Candidate; rejected?: RejectedCandidate } {
+function planPut(s: Snapshot, risk: RiskView, t: TickerView, leg: { market: string; bstock: string; key: string }, target: number, current: number, now: Date, sh: Shared): { candidate?: Candidate; rejected?: RejectedCandidate } {
   const lim = s.config.limits; const sol = risk.solution; const P = risk.portfolioUsd;
   const chain = s.options?.[t.ticker]; const ev = risk.activeEvents[t.ticker];
   const budgetWeekly = (s.config.risk.premiumBudgetWeeklyPct / 100) * P;
@@ -471,8 +470,8 @@ function planPut(s: Snapshot, risk: RiskView, t: TickerView, leg: { market: stri
   // Why this instrument beat the other one (one line).
   const perpNotional = pick.notionalUsd; const perpMargin = perpNotional / Math.max(1, maxSafeLeverage(evGap(t), lim.maxLeverage));
   const perpLine = t.perpOk
-    ? (perpMargin > sh.offBnbRoom + 1e-6 && perpMargin > sh.freeMargin ? `A Lighter perp of about ${m(perpNotional)} would need ${m(perpMargin)} of margin against ${m(sh.offBnbRoom)} of room under your ${m(lim.maxCapitalOffBnbUsd)} off-BNB cap, so it cannot reach the limit inside it.` : `A Lighter perp of about ${m(perpNotional)} would cost about ${m(perpNotional * PERP_FEE_ROUNDTRIP)} in fees but needs monitoring and margin; a put needs neither and keeps your upside.`)
-    : `${t.ticker} has no Lighter perp, so a put is the direct hedge.`;
+    ? (perpMargin > sh.offBnbRoom + 1e-6 && perpMargin > sh.freeMargin ? `A perp of about ${m(perpNotional)} would need ${m(perpMargin)} of margin against ${m(sh.offBnbRoom)} of room under your ${m(lim.maxCapitalOffBnbUsd)} off-BNB cap, so it cannot reach the limit inside it.` : `A perp of about ${m(perpNotional)} would cost about ${m(perpNotional * PERP_FEE_ROUNDTRIP)} in fees but needs monitoring and margin; a put needs neither and keeps your upside.`)
+    : `${t.ticker} has no perp, so a put is the direct hedge.`;
   assumptions.unshift(
     `Derive option orders are not connected yet: approving this runs a dry run only until they are.`,
     `Put quoted at $${pick.ask} (spread ${pick.spreadPct}%), implied volatility ${(pick.iv * 100).toFixed(0)}%, delta ${pick.delta}; fees ${(chain.feeFraction * 10_000).toFixed(0)} bps of notional; ${chain.settlement}-settled; quotes ${chain.quotesOffHours ? 'stay live' : 'pause'} while the market is closed.`,
@@ -486,8 +485,8 @@ function planPut(s: Snapshot, risk: RiskView, t: TickerView, leg: { market: stri
     const roomNow = sh.freeMargin + Math.min(sh.bnbLeft, sh.offBnbRoom) / 1.05;
     const reserve = Number(BigInt(s.config.rebalance.keepBscReserveBaseUnit)) / 1e6;
     options.splice(0, 0, marginP > roomNow
-      ? `Hedge the rest with a ${t.ticker} perp instead: about ${m(feesP)} in fees but ${m(marginP)} of margin on Lighter, so raise your BNB allowance to about ${m(Math.ceil(marginP * 1.05 + reserve))}${marginP > sh.freeMargin + sh.offBnbRoom / 1.05 ? ` and your off-BNB cap above ${m(lim.maxCapitalOffBnbUsd)}` : ''}`
-      : `Hedge the rest with a ${t.ticker} perp instead: about ${m(feesP)} in fees and ${m(marginP)} of margin on Lighter, which fits your current allowance`);
+      ? `Hedge the rest with a ${t.ticker} perp instead: about ${m(feesP)} in fees but ${m(marginP)} of margin on perps, so raise your BNB allowance to about ${m(Math.ceil(marginP * 1.05 + reserve))}${marginP > sh.freeMargin + sh.offBnbRoom / 1.05 ? ` and your off-BNB cap above ${m(lim.maxCapitalOffBnbUsd)}` : ''}`
+      : `Hedge the rest with a ${t.ticker} perp instead: about ${m(feesP)} in fees and ${m(marginP)} of margin on perps, which fits your current allowance`);
   }
   if (options && reasons.some((x) => /allowance/i.test(x))) options.push('Raise your BNB USDC allowance to the agent');
   const view: HedgePlanView = {
@@ -508,7 +507,7 @@ function planPut(s: Snapshot, risk: RiskView, t: TickerView, leg: { market: stri
     id: `hedge:${leg.market}:put:${pick.strike}:${run.contracts}`, kind: 'hedge', venue: 'derive', amountBaseUnit: '0', notionalUsd: r2(run.notionalUsd),
     explain: `Buy ${contractsText(run.contracts)} (strike ${run.strike}, expires in ${run.daysToExpiry} days) on Derive${stagedPut ? `, step 1 of ${orders.length} (the plan is ${pick.contracts} puts, ${m(pick.notionalUsd)})` : orders.length > 1 ? ` in ${orders.length} orders` : ''} to cap the loss on ${m(run.notionalUsd)} of ${t.bstock} through ${what}. Cost about ${m(run.premiumUsd + run.feesUsd, 2)} (premium ${m(run.premiumUsd, 2)} plus fees ${m(run.feesUsd, 2)}).${marginPlan ? ` First moves ${m(marginPlan.moveUsd, 2)} from BNB to Derive (about ${Math.round(marginPlan.etaSec / 60)} min).` : ''}`,
     reason: `${t.ticker}: ${ev ? `${ev.kind} in ${eh}h, ` : ''}modelled 99% loss ${ev ? 'around it ' : ''}is ${vp(sol.varNow * 100, risk.limitPct)}% against your ${risk.limitPct}% limit; a put needs no monitoring and caps the loss`,
-    hedge: { bstock: t.bstock, market: leg.market, marketId: leg.marketId, deltaToShort: 0, driftPct: 100, ticker: t.ticker, targetUsd: r2(target), currentUsd: r2(current), instrument: 'put', key: leg.key, option: { expiry: run.expiry, strike: run.strike, contracts: run.contracts, ask: run.ask, premiumUsd: run.premiumUsd, feesUsd: run.feesUsd, notionalUsd: run.notionalUsd } },
+    hedge: { bstock: t.bstock, market: leg.market, deltaToShort: 0, driftPct: 100, ticker: t.ticker, targetUsd: r2(target), currentUsd: r2(current), instrument: 'put', key: leg.key, option: { expiry: run.expiry, strike: run.strike, contracts: run.contracts, ask: run.ask, premiumUsd: run.premiumUsd, feesUsd: run.feesUsd, notionalUsd: run.notionalUsd } },
     binding: reasons, plan: view, urgency: 1600 + Math.min(400, (sol.varNow - varThis) * 1000),
     idempotencyKey: `ag-${key(s.wallet, s.network, 'put', leg.market, pick.strike, run.contracts, Math.floor(now.getTime() / 300_000))}`,
   } };

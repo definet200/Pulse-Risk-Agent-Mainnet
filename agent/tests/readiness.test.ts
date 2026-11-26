@@ -31,15 +31,15 @@ describe('readiness alerts: what stops Auto mode from acting, each with its fix'
     expect(a).toMatch(/ETH there and needs about 0\.0003 ETH/);
     expect(a).toMatch(/minimum move under \$8\.00/);
   });
-  it('a hedge below Lighter\'s $10 minimum order', () => {
+  it('a hedge below the perps venue\'s $5 minimum order', () => {
     const s = funded(); s.config.hedge.enabled = true;
-    s.config.hedge.legs = [{ bstock: 'NVDAB', venue: 'lighter', kind: 'perp', market: 'NVDA', marketId: 110, hedgeRatio: 1 }] as typeof s.config.hedge.legs;
-    s.bsc.bstocks = [{ symbol: 'NVDAB', qty: 0.03, value: 5 }];
-    expect(readinessAlerts(s, ok).join()).toMatch(/NVDA: your NVDAB is \$5\.00.*\$10\.00 minimum/);
+    s.config.hedge.legs = [{ bstock: 'NVDAB', venue: 'aster', kind: 'perp', market: 'NVDA', hedgeRatio: 1 }] as typeof s.config.hedge.legs;
+    s.bsc.bstocks = [{ symbol: 'NVDAB', qty: 0.03, value: 4 }];
+    expect(readinessAlerts(s, ok).join()).toMatch(/NVDA: your NVDAB is \$4\.00.*\$5\.00 minimum/);
   });
   it('a missing venue account', () => {
-    const s = funded(); s.venueProblems = { lighter: 'no API key registered' };
-    expect(readinessAlerts(s, ok).join()).toMatch(/Lighter: no API key registered\. Register it/);
+    const s = funded(); s.venueProblems = { aster: 'no API key registered' };
+    expect(readinessAlerts(s, ok).join()).toMatch(/Perps: no API key registered\. Register it/);
   });
   it('quiet when the agent has nothing to do', () => {
     const s = funded(); s.config.rebalance.enabled = false; s.config.hedge.enabled = false;

@@ -11,7 +11,7 @@ import { memoryActions, setActionsBackend } from './tools/appApi';
 // Runs every scenario and prints a pass/fail table.
 //   npm run scenarios                         deterministic (no LLM), nothing leaves this machine
 //   npm run scenarios -- --llm                the real LLM nodes decide (uses OpenRouter)
-//   npm run scenarios -- --real               use REAL realised 1h volatility from Lighter instead of made-up numbers
+//   npm run scenarios -- --real               use REAL realised 1h volatility from the perps venue instead of made-up numbers
 //   npm run scenarios -- --ui 0xWallet        also push each dry-run result into that wallet's Activity feed
 //   npm run scenarios -- --ui 0xWallet --proposal "calm market"   also submit that proposal scenario for approval
 const args = process.argv.slice(2);
@@ -48,9 +48,9 @@ for (const s of ACTION_SCENARIOS) {
 
 let realVol: number | null = null;
 if (flag('--real')) {
-  // Real market data: realised 1h volatility of ETH-PERP on Lighter mainnet (most liquid, always trading).
-  realVol = realizedVol1h(await fetchCloses('mainnet', 0));
-  console.log(`\nREAL DATA: ETH 1h realised volatility on Lighter = ${realVol === null ? 'unavailable (using scenario values)' : (realVol * 100).toFixed(3) + '%'}`);
+  // Real market data: realised 1h volatility of the ETH perp (ETHUSDT, public klines; most liquid, always trading).
+  realVol = realizedVol1h(await fetchCloses('mainnet', 'ETH'));
+  console.log(`\nREAL DATA: ETH 1h realised volatility on perps = ${realVol === null ? 'unavailable (using scenario values)' : (realVol * 100).toFixed(3) + '%'}`);
 }
 const volFor = (s: { fixedVol?: boolean; inputs: { vol1h: number } }) => (realVol !== null && !s.fixedVol ? realVol : s.inputs.vol1h);
 
@@ -71,7 +71,7 @@ if (wallet && pick) {
   const s = PROPOSAL_SCENARIOS.find((x) => x.name === pick);
   if (!s) { console.error(`\nno proposal scenario named "${pick}". Options: ${PROPOSAL_SCENARIOS.map((x) => x.name).join(' | ')}`); process.exit(1); }
   openStore(':memory:');
-  const p = await buildProposal(wallet, c.AGENT_NETWORK, { venue: 'lighter', accountRef: '', equityUsd: s.inputs.equityUsd, usedUsd: s.inputs.usedUsd, positions: [{ symbol: 'ETH', valueUsd: Math.round(s.inputs.usedUsd * s.inputs.leverage) }] }, { ...s.inputs, vol1h: volFor(s) });
+  const p = await buildProposal(wallet, c.AGENT_NETWORK, { venue: 'aster', accountRef: '', equityUsd: s.inputs.equityUsd, usedUsd: s.inputs.usedUsd, positions: [{ symbol: 'ETH', valueUsd: Math.round(s.inputs.usedUsd * s.inputs.leverage) }] }, { ...s.inputs, vol1h: volFor(s) });
   const r = await postProposal(p);
   console.log(`\nproposal "${pick}" ${r.duplicate ? 'was already submitted' : `submitted as #${r.id}: open Risk management to approve it`}`);
 }

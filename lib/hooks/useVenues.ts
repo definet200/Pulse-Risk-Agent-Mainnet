@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { Address } from 'viem';
 import { useVenueNetwork, type VenueNetwork } from '@/lib/network';
 import { useSession } from '@/lib/session';
+import type { AsterAccountView, AsterMarket } from '@/lib/aster-view';
 
 export interface LighterMarketDetail {
   symbol: string; market_id: number; status: string; size_decimals: number; price_decimals: number; min_base_amount: string; min_quote_amount: string;
@@ -23,6 +24,28 @@ async function getJson<T>(url: string, init?: RequestInit): Promise<T> {
   return j;
 }
 
+/** Perps markets (Aster USDT perps), busiest first. */
+export function useAsterMarkets(network?: VenueNetwork) {
+  const { network: ctx } = useVenueNetwork();
+  const n = network ?? ctx;
+  return useQuery({
+    queryKey: ['aster-markets', n],
+    queryFn: async () => (await getJson<{ markets: AsterMarket[] }>(`/api/trade/aster-market?network=${n}&kind=markets`)).markets,
+    refetchInterval: 5_000,
+  });
+}
+
+/** The signed-in wallet's perps account. state: ok | no_deposit (show "Deposit to start trading perps") | needs_agent. */
+export function useAsterAccount() {
+  const { network } = useVenueNetwork();
+  const { wallet } = useSession();
+  return useQuery({
+    queryKey: ['aster-account', network, wallet], enabled: !!wallet, refetchInterval: 4_000,
+    queryFn: () => getJson<AsterAccountView>(`/api/trade/aster-account?network=${network}`),
+  });
+}
+
+/** Dormant: Lighter is no longer used in user flows (kept for reference). */
 export function useLighterMarkets(network?: VenueNetwork) {
   const { network: ctx } = useVenueNetwork();
   const n = network ?? ctx;
@@ -105,7 +128,7 @@ export function useDeriveAccount() {
   });
 }
 
-export interface AgentKeyRow { venue: 'lighter' | 'derive'; network: VenueNetwork; account_ref: string; key_ref: string; public_key: string; scope: string; expires_at: number | null; status: 'active' | 'pending'; created_at: number }
+export interface AgentKeyRow { venue: 'aster' | 'lighter' | 'derive'; network: VenueNetwork; account_ref: string; key_ref: string; public_key: string; scope: string; expires_at: number | null; status: 'active' | 'pending'; created_at: number }
 
 export function useAgentKeys() {
   const { wallet } = useSession();

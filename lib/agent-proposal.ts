@@ -18,8 +18,8 @@ export type ProposedRule = z.infer<typeof ProposedRule>;
 export const ProposalIn = z.object({
   wallet: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
   network: z.enum(['mainnet', 'testnet']),
-  venue: z.enum(['lighter', 'derive']),
-  /** '' = Lighter main account; Derive subaccount id otherwise. */
+  venue: z.enum(['aster', 'lighter', 'derive']),
+  /** '' = the perps (Aster) account; Derive subaccount id otherwise. */
   accountRef: z.string().max(24),
   structural_risk: z.string().min(1).max(600),
   proposed_rule: ProposedRule,
@@ -37,7 +37,7 @@ export type ProposalIn = z.infer<typeof ProposalIn>;
 export type ProposalStatus = 'pending' | 'approved' | 'rejected' | 'superseded' | 'reverted';
 
 export interface ProposalRow {
-  id: number; network: string; venue: 'lighter' | 'derive'; accountRef: string; status: ProposalStatus;
+  id: number; network: string; venue: 'aster' | 'lighter' | 'derive'; accountRef: string; status: ProposalStatus;
   structural_risk: string; proposed_rule: ProposedRule; reasoning: string; metrics: Record<string, number | string | null> | null;
   created_at: number; decided_at: number | null;
 }
@@ -53,10 +53,13 @@ export const sourcesFor = (p: ProposedRule['primary_source']): AgentConfig['reba
  * kept), the funding order follows the primary source, and automation is armed. Throws if the result is invalid.
  */
 export function applyProposal(cfg: AgentConfig, p: Pick<ProposalIn, 'venue' | 'accountRef' | 'proposed_rule'>): AgentConfig {
+  // Lighter is dormant: it is no longer a rule venue, so a proposal for it cannot be applied.
+  if (p.venue === 'lighter') throw new Error('Perps rules now run on the new perps account; this proposal is out of date');
+  const venue = p.venue;
   const next = structuredClone(cfg);
   const key = ruleKey(p);
   const i = next.rebalance.rules.findIndex((r) => ruleKey(r) === key);
-  const base: RiskRule = i >= 0 ? (next.rebalance.rules[i] as RiskRule) : defaultRule(p.venue, p.accountRef);
+  const base: RiskRule = i >= 0 ? (next.rebalance.rules[i] as RiskRule) : defaultRule(venue, p.accountRef);
   const r = p.proposed_rule;
   const rule = {
     ...base, mode: 'utilization' as const, triggerBps: bps(r.top_up_trigger), targetBps: bps(r.restore_target),

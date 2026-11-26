@@ -8,7 +8,8 @@ import { RiskAnalystOut } from '../llm/schemas';
 import { runLlm } from '../llm/run';
 import * as app from '../tools/appApi';
 import * as bsc from '../tools/bsc';
-import * as lighter from '../tools/lighter';
+import { tickerOfAster } from '../../../lib/aster';
+import * as aster from '../tools/aster';
 import * as metrics from '../tools/metrics';
 import * as pancake from '../tools/pancake';
 import type { Network } from '../types';
@@ -19,7 +20,7 @@ import { draftText, fitRule, type Fit, type FitInputs } from './compute';
 
 export const fitParams = () => { const c = config(); return { maxUtil: c.PROPOSE_MAX_UTIL, kSigma: c.PROPOSE_K_SIGMA, volStress: c.PROPOSE_VOL_STRESS, minTrigger: c.PROPOSE_MIN_TRIGGER, maxTrigger: c.PROPOSE_MAX_TRIGGER, tickSec: c.TICK_INTERVAL_SEC }; };
 
-export interface AccountView { venue: 'lighter' | 'derive'; accountRef: string; equityUsd: number; usedUsd: number; positions: { symbol: string; valueUsd: number }[] }
+export interface AccountView { venue: 'aster' | 'lighter' | 'derive'; accountRef: string; equityUsd: number; usedUsd: number; positions: { symbol: string; valueUsd: number }[] }
 
 /** Fit + explain. Numbers come from code; the LLM (if on) only writes the two explanation fields. */
 export async function buildProposal(wallet: string, network: Network, acct: AccountView, inputs: FitInputs): Promise<ProposalIn> {
@@ -42,39 +43,39 @@ export function alreadyApplied(cfg: AgentConfig, p: ProposalIn): boolean {
 }
 
 export interface ProposeDeps {
-  getLighterCreds: typeof app.getLighterCreds;
-  lighterAccount: typeof lighter.getAccount;
+  getAsterCreds: typeof app.getAsterCreds;
+  asterAccount: typeof aster.getAccount;
   vol1h: typeof metrics.vol1h;
   latency: typeof metrics.topUpLatencySec;
   funds: (wallet: string, symbols: string[]) => ReturnType<typeof bsc.getFunds>;
   post: typeof app.postProposal;
 }
 export const realProposeDeps: ProposeDeps = {
-  getLighterCreds: app.getLighterCreds, lighterAccount: lighter.getAccount, vol1h: metrics.vol1h, latency: metrics.topUpLatencySec,
+  getAsterCreds: app.getAsterCreds, asterAccount: aster.getAccount, vol1h: metrics.vol1h, latency: metrics.topUpLatencySec,
   funds: (w, s) => bsc.getFunds(w, bsc.agentAddress(), s, pancake.priceOf), post: app.postProposal,
 };
 
-/** One analysis pass for a wallet's Lighter main account. Returns what happened; never throws. */
+/** One analysis pass for a wallet's perps (Aster) account. Returns what happened; never throws. */
 export async function proposeForWallet(wallet: string, network: Network, cfg: AgentConfig, deps: ProposeDeps = realProposeDeps): Promise<string> {
   try {
-    const creds = await deps.getLighterCreds(wallet, network);
-    const a = await deps.lighterAccount(network, creds.accountIndex);
-    if (!a) return 'no Lighter account';
-    const equity = Number(a.total_asset_value); const used = Math.max(0, equity - Number(a.available_balance));
-    const positions = (a.positions ?? []).map((p) => ({ marketId: p.market_id, symbol: p.symbol, valueUsd: Math.abs(Number(p.position_value ?? 0)) })).filter((p) => p.valueUsd > 0);
+    const creds = await deps.getAsterCreds(wallet, network);
+    const a = await deps.asterAccount(network, creds);
+    if (!a.account) return 'perps account has no deposit yet';
+    const { equityUsd: equity, freeUsd } = aster.equityOf(a); const used = Math.max(0, equity - freeUsd);
+    const positions = a.positions.map((p) => ({ ticker: tickerOfAster(p.symbol) ?? p.symbol, symbol: p.symbol, valueUsd: Math.abs(Number(p.notional ?? 0)) })).filter((p) => p.valueUsd > 0);
     if (!positions.length || used <= 0 || equity <= 0) return 'no open positions to protect';
     const top = positions.sort((x, y) => y.valueUsd - x.valueUsd)[0];
-    const vol = await deps.vol1h(network, top.marketId);
+    const vol = await deps.vol1h(network, top.ticker);
     if (vol === null) return 'volatility unavailable (fail closed)';
     const symbols = [...new Set([...cfg.hedge.legs.map((l) => l.bstock), ...cfg.rebalance.sellOrder])];
     const { funds, problems } = await deps.funds(wallet, symbols);
     if (problems.length) return `funds unreadable: ${problems.join('; ')}`;
     const hair = cfg.collateral.bstockHaircut;
     const inputs: FitInputs = {
-      vol1h: vol, latencySec: deps.latency('lighter').sec, leverage: positions.reduce((s, p) => s + p.valueUsd, 0) / used, utilNow: used / equity, equityUsd: equity, usedUsd: used,
+      vol1h: vol, latencySec: deps.latency('aster').sec, leverage: positions.reduce((s, p) => s + p.valueUsd, 0) / used, utilNow: used / equity, equityUsd: equity, usedUsd: used,
       bnbStablesUsd: funds.usdcUsd + funds.usdtUsd, bstocksAfterHaircutUsd: funds.bstocks.reduce((s, b) => s + b.value, 0) * (1 - hair), haircutPct: hair * 100,
     };
-    const p = await buildProposal(wallet, network, { venue: 'lighter', accountRef: '', equityUsd: equity, usedUsd: used, positions: positions.slice(0, 5).map((x) => ({ symbol: x.symbol, valueUsd: Math.round(x.valueUsd) })) }, inputs);
+    const p = await buildProposal(wallet, network, { venue: 'aster', accountRef: '', equityUsd: equity, usedUsd: used, positions: positions.slice(0, 5).map((x) => ({ symbol: x.symbol, valueUsd: Math.round(x.valueUsd) })) }, inputs);
     if (alreadyApplied(cfg, p)) return 'current rule already matches the fitted proposal';
     const r = await deps.post(p);
     return r.duplicate ? 'same proposal already submitted' : `proposal #${r.id} submitted for approval`;

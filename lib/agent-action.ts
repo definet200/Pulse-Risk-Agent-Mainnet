@@ -13,7 +13,7 @@ export type PayoffView = z.infer<typeof PayoffView>;
 
 /** Each venue the agent considered for a hedge, and why it was or was not used. */
 export const VenueAlternative = z.object({
-  venue: z.enum(['lighter', 'derive', 'proxy']), instrument: z.string().max(120), status: z.enum(['chosen', 'possible', 'blocked']), why: z.string().max(400),
+  venue: z.enum(['aster', 'lighter', 'derive', 'proxy']), instrument: z.string().max(120), status: z.enum(['chosen', 'possible', 'blocked']), why: z.string().max(400),
 });
 export type VenueAlternative = z.infer<typeof VenueAlternative>;
 
@@ -21,7 +21,7 @@ export const ActionIn = z.object({
   wallet: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
   network: z.enum(['mainnet', 'testnet']),
   kind: z.enum(['top_up', 'release', 'hedge']),
-  venue: z.enum(['lighter', 'derive']),
+  venue: z.enum(['aster', 'lighter', 'derive']),
   /** Why it came up: a margin rule or a news-driven hedge. */
   origin: z.enum(['rule', 'news', 'chat']),
   /** One request per slot is open at a time; a newer one supersedes it. e.g. 'lighter:' or 'hedge:NVDA'. */
@@ -81,7 +81,7 @@ export const HedgePlanView = z.object({
   concentration: z.string().max(300).optional(),
   portfolioUsd: z.number(),
   instrument: z.string().max(80),
-  venue: z.enum(['lighter', 'derive']),
+  venue: z.enum(['aster', 'lighter', 'derive']),
   ticker: z.string().max(12),
   sizeUsd: z.number(),
   leverage: z.number().nullable(),

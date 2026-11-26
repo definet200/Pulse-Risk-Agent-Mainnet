@@ -3,7 +3,7 @@ import { useMemo, useRef, useState } from 'react';
 import { useQueries } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { useVenueNetwork } from '@/lib/network';
-import { derivePublic, useLighterMarkets } from '@/lib/hooks/useVenues';
+import { derivePublic, useAsterMarkets } from '@/lib/hooks/useVenues';
 import { useBStockTickers } from '@/lib/hooks/useBStockTickers';
 import { LegBuilder, VENUE_NAME, type WhatIfLeg } from './LegBuilder';
 import type { RiskAccount } from '@/lib/hooks/useRiskAccounts';
@@ -26,13 +26,13 @@ const W = 760, H = 330, PADL = 64, PADR = 20, PADT = 20, PADB = 46;
 
 /**
  * Scenario forecast: payoff of everything on one underlying (Derive options repriced with Black-Scholes at their
- * live mark IV, Derive/Lighter perps and bStocks linearly) across a spot move, a time step and a vol shift,
+ * live mark IV, perps and bStocks linearly) across a spot move, a time step and a vol shift,
  * with each account's liquidation and rebalance-trigger points marked.
  */
 export function ScenarioForecast({ accounts, rules, stocks, initialLegs = [] }: { accounts: RiskAccount[]; rules: RiskRule[]; stocks: Stock[]; initialLegs?: WhatIfLeg[] }) {
   const { network } = useVenueNetwork();
   const [whatIf, setWhatIf] = useState<WhatIfLeg[]>(initialLegs);
-  const lighterMarkets = useLighterMarkets();
+  const perpMarkets = useAsterMarkets();
   const bTickers = useBStockTickers();
   const nowMs = useMemo(() => Date.now(), []);
 
@@ -52,7 +52,7 @@ export function ScenarioForecast({ accounts, rules, stocks, initialLegs = [] }: 
   /** Live price for a what-if leg (option = Derive mark; perps = mark; bStock = Binance last). */
   function whatIfPrice(w: WhatIfLeg): number | null {
     if (w.venue === 'derive-option') return tickers[w.instrument]?.option_pricing ? Number(tickers[w.instrument]!.option_pricing!.m) : null;
-    if (w.venue === 'lighter') { const m = lighterMarkets.data?.find((x) => x.market_id === w.marketId); return m ? Number(m.mark_price) || m.last_trade_price || null : null; }
+    if (w.venue === 'perp') { const m = perpMarkets.data?.find((x) => x.ticker === w.underlying); return m ? m.mark ?? m.last : null; }
     return bTickers.data?.find((t) => t.symbol === w.instrument)?.price ?? null;
   }
 
@@ -92,7 +92,7 @@ export function ScenarioForecast({ accounts, rules, stocks, initialLegs = [] }: 
       }
     }
     return out;
-  }, [accounts, stocks, whatIf, tickers, lighterMarkets.data, bTickers.data]);
+  }, [accounts, stocks, whatIf, tickers, perpMarkets.data, bTickers.data]);
 
   const keyOf = (l: Leg) => l.underlying ?? (l.account === 'BNB wallet' ? bstockBySymbol(l.label)?.underlying ?? l.label : underlyingOf(l.label));
   const underlyings = useMemo(() => [...new Set(legs.map(keyOf))].sort(), [legs]);
@@ -257,7 +257,7 @@ export function ScenarioForecast({ accounts, rules, stocks, initialLegs = [] }: 
         </>
       )}
 
-      <LegBuilder legs={whatIf} lighterMarkets={lighterMarkets.data} priceOf={whatIfPrice}
+      <LegBuilder legs={whatIf} perpMarkets={perpMarkets.data} priceOf={whatIfPrice}
         onChange={(next) => { const added = next.find((x) => !whatIf.some((y) => y.id === x.id)); setWhatIf(next); if (added) { setPicked(added.underlying); setHover(null); } }} />
     </section>
   );

@@ -1,13 +1,15 @@
 import type { VenueAlternative } from '../../../lib/agent-action';
+import { ASTER_MIN_NOTIONAL_USD } from '../../../lib/aster';
 import type { Candidate, Snapshot } from '../types';
 import { tickerOf } from './market';
 import { pickPut } from './options';
 
-// Why this venue and not the others: for a hedge on one name, every venue the agent can use (Lighter perp, Derive
+// Why this venue and not the others: for a hedge on one name, every venue the agent can use (perp, Derive
 // put, a proxy perp) with whether it was chosen, is possible, or is blocked, and the concrete reason from live
-// numbers (venue minimums, free funds across ALL sub-accounts, cost against the weekly budget, transfer time).
+// numbers (venue minimums, free funds across ALL accounts, cost against the weekly budget, transfer time).
 
-const LIGHTER_MIN_USD = 10;
+/** Perps (Aster) minimum order notional (exchangeInfo MIN_NOTIONAL). */
+const PERP_MIN_USD = ASTER_MIN_NOTIONAL_USD;
 const m = (x: number) => `$${x.toFixed(2)}`;
 
 export type HedgeChoice = 'perp' | 'put' | 'proxy' | null;
@@ -23,25 +25,24 @@ export function venueAlternatives(s: Snapshot, ticker: string, chosen: HedgeChoi
   const holding = held.reduce((a, b) => a + b.value, 0);
   const portfolio = s.bsc.bstocks.reduce((a, b) => a + (b.qty > 0 ? b.value : 0), 0);
   const accts = s.venueAccounts ?? [];
-  const lighterAll = accts.filter((a) => a.venue === 'lighter');
-  const lighterMainFree = lighterAll.find((a) => a.main)?.freeUsd ?? s.lighterMain?.freeUsd ?? 0;
-  const lighterSubsFree = lighterAll.filter((a) => !a.main).reduce((a, b) => a + b.freeUsd, 0);
+  const perpAll = accts.filter((a) => a.venue === 'aster');
+  const perpMainFree = perpAll.find((a) => a.main)?.freeUsd ?? s.perpMain?.freeUsd ?? 0;
   const deriveAll = accts.filter((a) => a.venue === 'derive');
   const deriveFree = deriveAll.length ? Math.max(...deriveAll.map((a) => a.freeUsd)) : s.deriveFree?.freeUsd ?? 0;
   const deriveTotal = deriveAll.reduce((a, b) => a + b.freeUsd, 0);
   const lev = Math.max(1, cfg.limits.maxLeverage);
   const tag = (k: HedgeChoice): VenueAlternative['status'] => (chosen === k ? 'chosen' : 'possible');
 
-  // Lighter perp on the name itself.
-  const leg = cfg.hedge.legs.find((l) => l.venue === 'lighter' && l.kind === 'perp' && tickerOf(l.bstock) === ticker);
+  // Perp on the name itself.
+  const leg = cfg.hedge.legs.find((l) => l.venue === 'aster' && l.kind === 'perp' && tickerOf(l.bstock) === ticker);
   {
     const size = holding * (leg?.hedgeRatio ?? 1); const margin = size / lev;
     let why: string; let status = tag('perp');
-    if (!leg) { status = 'blocked'; why = `Lighter lists no ${ticker} perp.`; }
-    else if (size < LIGHTER_MIN_USD) { status = 'blocked'; why = `A ${m(size)} short is under Lighter's ${m(LIGHTER_MIN_USD)} minimum order; hold at least ${m(LIGHTER_MIN_USD)} of ${ticker}.`; }
-    else if (lighterMainFree < margin) { status = chosen === 'perp' ? 'chosen' : 'blocked'; why = `Needs about ${m(margin)} margin at ${lev}x; Lighter main has ${m(lighterMainFree)} free${lighterSubsFree > 0 ? `, ${m(lighterSubsFree)} more in sub-accounts (an instant internal transfer)` : ''}, otherwise a top-up from BNB takes about ${Math.round((s.bridgeEtaSec ?? 1200) / 60)} min.`; }
-    else why = `${m(size)} short, margin about ${m(margin)} of ${m(lighterMainFree)} free on Lighter main. Offsets moves 1:1 both ways; costs funding, needs monitoring, can be liquidated on a gap.`;
-    out.push({ venue: 'lighter', instrument: `Short ${ticker} perp on Lighter`, status, why });
+    if (!leg) { status = 'blocked'; why = `The perps venue lists no ${ticker} perp.`; }
+    else if (size < PERP_MIN_USD) { status = 'blocked'; why = `A ${m(size)} short is under the perps venue's ${m(PERP_MIN_USD)} minimum order; hold at least ${m(PERP_MIN_USD)} of ${ticker}.`; }
+    else if (perpMainFree < margin) { status = chosen === 'perp' ? 'chosen' : 'blocked'; why = `Needs about ${m(margin)} margin at ${lev}x; the perps account has ${m(perpMainFree)} free, otherwise a top-up from BNB (a BNB Chain deposit, no bridge) takes about ${Math.max(1, Math.round((s.perpEtaSec ?? 60) / 60))} min.`; }
+    else why = `${m(size)} short, margin about ${m(margin)} of ${m(perpMainFree)} free on the perps account. Offsets moves 1:1 both ways; costs funding, needs monitoring, can be liquidated on a gap.`;
+    out.push({ venue: 'aster', instrument: `Short ${ticker} perp`, status, why });
   }
 
   // Derive put on the name (or its index options for SPY/QQQ).
@@ -71,15 +72,15 @@ export function venueAlternatives(s: Snapshot, ticker: string, chosen: HedgeChoi
   {
     const pm = cfg.risk.proxyMap?.[ticker]; const sigT = s.market?.sigmaDay[ticker]; const sigV = pm ? s.market?.sigmaDay[pm.via] : undefined;
     let why: string; let status = tag('proxy');
-    if (!pm || !s.proxyPrices?.[pm.via]) { status = 'blocked'; why = `No Lighter market tracks ${ticker} closely enough (correlation under 0.3) to use as a proxy.`; }
+    if (!pm || !s.proxyPrices?.[pm.via]) { status = 'blocked'; why = `No perps market tracks ${ticker} closely enough (correlation under 0.3) to use as a proxy.`; }
     else {
       const size = sigT && sigV ? holding * pm.beta * (sigT / sigV) : holding * pm.beta;
       const left = Math.round(Math.sqrt(Math.max(0, 1 - pm.beta ** 2)) * 100);
-      if (size < LIGHTER_MIN_USD) { status = 'blocked'; why = `A ${m(size)} ${pm.via} short is under Lighter's ${m(LIGHTER_MIN_USD)} minimum order.`; }
+      if (size < PERP_MIN_USD) { status = 'blocked'; why = `A ${m(size)} ${pm.via} short is under the perps venue's ${m(PERP_MIN_USD)} minimum order.`; }
       else if (chosen !== 'proxy' && (chosen === 'perp' || chosen === 'put' || leg)) { status = 'possible'; why = `Short about ${m(size)} ${pm.via} (correlation ${pm.beta}); leaves about ${left}% of ${ticker}'s risk, so the agent uses it only when there is no direct hedge.`; }
       else why = `Short about ${m(size)} ${pm.via} (correlation ${pm.beta}); about ${left}% of ${ticker}'s risk stays.`;
     }
-    out.push({ venue: 'proxy', instrument: pm ? `Short ${pm.via} perp on Lighter (proxy)` : 'Proxy perp', status, why });
+    out.push({ venue: 'proxy', instrument: pm ? `Short ${pm.via} perp (proxy)` : 'Proxy perp', status, why });
   }
   return out;
 }

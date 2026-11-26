@@ -16,12 +16,12 @@ const hours = (h: number) => new Date(Date.now() + h * 3_600_000).toISOString();
 /** TSLA $15k, earnings in 20 minutes, Derive holds $300. Budget and caps are set per test. */
 function tsla(over: (s: Snapshot) => void = () => {}): Snapshot {
   const s = fixtureSnapshot({ health: {} }); s.config.rebalance.enabled = false;
-  s.config.hedge = { enabled: true, driftThresholdPct: 5, sizing: 'loss_limit', news: { enabled: false }, legs: [{ bstock: 'TSLAB', venue: 'lighter', kind: 'perp', market: 'TSLA', marketId: 120, hedgeRatio: 1 }] };
+  s.config.hedge = { enabled: true, driftThresholdPct: 5, sizing: 'loss_limit', news: { enabled: false }, legs: [{ bstock: 'TSLAB', venue: 'aster', kind: 'perp', market: 'TSLA', hedgeRatio: 1 }] };
   s.config.risk = { ...s.config.risk, lossTolerancePct: 5, premiumBudgetWeeklyPct: 1, eventLeadHours: 1 };
   s.config.limits.maxNotionalPerTradeUsd = 50_000; s.config.limits.maxNotionalPerDayUsd = 100_000;
   s.config.events = [{ ticker: 'TSLA', at: hours(20 / 60), kind: 'earnings', gapPct: 12 }];
   s.bsc = { usdcUsd: 3000, usdtUsd: 0, allowanceUsdcBase: '2500000000', bstocks: [{ symbol: 'TSLAB', qty: 60, value: 15_000, allowanceQty: 60 }] };
-  s.lighterPositions = {}; s.lighterMain = { equityUsd: 0, freeUsd: 0 }; s.deriveFree = { ref: '42', freeUsd: 300 }; s.bridgeEtaSec = 1500; s.deriveEtaSec = 1500; s.hedgeProblems = [];
+  s.perpPositions = {}; s.perpMain = { equityUsd: 0, freeUsd: 0 }; s.deriveFree = { ref: '42', freeUsd: 300 }; s.perpEtaSec = 1500; s.deriveEtaSec = 1500; s.hedgeProblems = [];
   s.market = { sigmaDay: { TSLA: 0.042 }, at: new Date().toISOString() }; s.today = { notionalUsd: 0, lossUsd: 0, capitalOffBnbUsd: 0, pausedReason: null };
   s.options = { TSLA: sampleChain('TSLA', 250, 0.6) };
   over(s); return s;

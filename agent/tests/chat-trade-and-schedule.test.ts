@@ -21,9 +21,9 @@ describe('chat trades: exact order, never chosen by the planner', () => {
     expect(c).toMatchObject({ chat: true, venue: 'derive', notionalUsd: 147.65, idempotencyKey: 'chat-15' });
     expect(c.hedge).toMatchObject({ kind: 'put', deltaToShort: 1, key: 'derive-put:NVDA', derive: { instrument: 'NVDA-20261204-133-P' } });
   });
-  it('a Lighter short sells (deltaToShort > 0), a buy covers', () => {
-    const l: ChatTradeSpec = { venue: 'lighter', instrument: 'NVDA', marketId: 110, kind: 'perp', side: 'sell', amount: 0.07, quotedPrice: 150, ticker: 'NVDA' };
-    expect(candidateFromSpec(l, { price: 150, index: 150, notionalUsd: 10.5, costUsd: 0 }, 'k').hedge).toMatchObject({ deltaToShort: 0.07, marketId: 110, key: 'lighter:110' });
+  it('a perps short sells (deltaToShort > 0), a buy covers', () => {
+    const l: ChatTradeSpec = { venue: 'aster', instrument: 'NVDAUSDT', kind: 'perp', side: 'sell', amount: 0.07, quotedPrice: 150, ticker: 'NVDA' };
+    expect(candidateFromSpec(l, { price: 150, index: 150, notionalUsd: 10.5, costUsd: 0 }, 'k').hedge).toMatchObject({ deltaToShort: 0.07, venue: 'aster', key: 'aster:NVDA' });
     expect(candidateFromSpec({ ...l, side: 'buy' }, { price: 150, index: 150, notionalUsd: 10.5, costUsd: 0 }, 'k').hedge!.deltaToShort).toBe(-0.07);
   });
   it('on approval the price may be at most 25% worse than quoted', () => {

@@ -1,11 +1,11 @@
 import { hedgeKey, type AgentConfig, type HedgeLeg } from '../../../lib/agent-config';
 import { parseDeriveOption } from '../../../lib/scenario';
 import * as derive from './derive';
-import * as lighter from './lighter';
+import * as aster from './aster';
 import type { DeriveCreds } from './appApi';
 import type { Network, Snapshot } from '../types';
 
-// What the value-based hedge planner needs per leg: the HEDGE price (Lighter mark, Derive perp mark or index for puts),
+// What the value-based hedge planner needs per leg: the HEDGE price (perps mark, Derive perp mark or index for puts),
 // the current hedge positions, and the venue minimums. A leg whose price cannot be read is simply left out: the planner
 // then reports "waiting for prices" for it and trades nothing.
 
@@ -21,7 +21,8 @@ export interface HedgeData {
 export interface PutPickInfo { instrument: string; strike: number; expiry: string; ask: number; bid: number; daysToExpiry: number }
 
 export interface HedgeDataDeps {
-  lighterMarket(n: Network, marketId: number): Promise<{ price: number; minBase: number; sizeDecimals: number }>;
+  /** Perps (Aster) market by ticker: mark price and order minimums. */
+  perpMarket(n: Network, ticker: string): Promise<{ price: number; minBase: number; step: number; minNotionalUsd: number }>;
   deriveTicker(n: Network, instrument: string): Promise<{ mark: number; index: number }>;
   deriveInstrument(n: Network, instrument: string): Promise<{ minimumAmount: number; amountStep: number }>;
   deriveHoldings(n: Network, wallet: string, creds: DeriveCreds): Promise<{ instrument: string; amount: number }[]>;
@@ -30,7 +31,7 @@ export interface HedgeDataDeps {
 }
 
 export const realHedgeDeps: HedgeDataDeps = {
-  lighterMarket: async (n, id) => { const m = await lighter.getMarket(n, id); return { price: m.last_trade_price, minBase: Number(m.min_base_amount), sizeDecimals: m.size_decimals }; },
+  perpMarket: async (n, t) => { const [m, price] = await Promise.all([aster.market(n, t), aster.markPrice(n, t)]); return { price, minBase: m.minQty, step: m.stepSize, minNotionalUsd: m.minNotionalUsd }; },
   deriveTicker: (n, i) => derive.getTicker(n, i),
   deriveInstrument: (n, i) => derive.getInstrument(n, i),
   derivePutPick: async (n, ccy, put, index, now) => {
@@ -50,11 +51,10 @@ export const realHedgeDeps: HedgeDataDeps = {
   deriveHoldings: async (n, w, c) => (await derive.listSubaccounts(n, w, c)).filter((s) => !s.isFallback).flatMap((s) => s.positions.map((p) => ({ instrument: p.instrument_name, amount: Number(p.amount) }))),
 };
 
-const LIGHTER_MIN_NOTIONAL = 10;   // Lighter rejects orders under $10 notional
 const PUT_MIN_CONTRACTS = 1;       // Derive puts: 1 contract
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-export async function collectHedgeData(n: Network, wallet: string, hedge: AgentConfig['hedge'], held: Set<string>, lighterPositions: Record<number, number>, deriveCreds: DeriveCreds | null, deps: HedgeDataDeps = realHedgeDeps, now = Date.now()): Promise<HedgeData> {
+export async function collectHedgeData(n: Network, wallet: string, hedge: AgentConfig['hedge'], held: Set<string>, perpPositions: Record<string, number>, deriveCreds: DeriveCreds | null, deps: HedgeDataDeps = realHedgeDeps, now = Date.now()): Promise<HedgeData> {
   const out: HedgeData = { prices: {}, positions: {}, mins: {}, putPositions: [], putPicks: {}, problems: [] };
   const legs = hedge.legs.filter((l) => held.has(l.bstock));
   const needDeriveHoldings = legs.some((l) => l.venue === 'derive');
@@ -66,13 +66,13 @@ export async function collectHedgeData(n: Network, wallet: string, hedge: AgentC
   await Promise.all(legs.map(async (leg: HedgeLeg) => {
     const key = hedgeKey(leg);
     try {
-      if (leg.venue === 'lighter') {
-        if (leg.marketId === undefined) return;
-        const m = await deps.lighterMarket(n, leg.marketId);
-        out.prices[key] = m.price; out.positions[key] = lighterPositions[leg.marketId] ?? 0;
-        out.mins[key] = { minBase: m.minBase, step: 10 ** -m.sizeDecimals, minNotionalUsd: LIGHTER_MIN_NOTIONAL };
+      if (leg.venue === 'aster') {
+        const m = await deps.perpMarket(n, leg.market);
+        out.prices[key] = m.price; out.positions[key] = perpPositions[leg.market] ?? 0;
+        out.mins[key] = { minBase: m.minBase, step: m.step, minNotionalUsd: m.minNotionalUsd };
         return;
       }
+      if (leg.venue !== 'derive') return;   // dormant Lighter legs are not traded
       if (!deriveCreds) return;
       const inst = `${leg.market}-PERP`;
       const t = await deps.deriveTicker(n, inst);

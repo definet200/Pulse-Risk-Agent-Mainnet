@@ -26,9 +26,9 @@ describe('payoff before and after', () => {
   });
   it('payoffForChoice reads the chosen perp hedge from a run', () => {
     const s = fixtureSnapshot(); s.bsc.bstocks = [{ symbol: 'NVDAB', qty: 1, value: 150 }];
-    const c = { kind: 'hedge', hedge: { bstock: 'NVDAB', market: 'NVDA', marketId: 110, deltaToShort: 0.5, driftPct: 100, ticker: 'NVDA', hedgePrice: 150 } } as unknown as Candidate;
+    const c = { kind: 'hedge', hedge: { bstock: 'NVDAB', market: 'NVDA', deltaToShort: 0.5, driftPct: 100, ticker: 'NVDA', hedgePrice: 150 } } as unknown as Candidate;
     const p = payoffForChoice(s, c)!;
-    expect(p.hedgeLabel).toBe('Short $75 NVDA perp on Lighter');
+    expect(p.hedgeLabel).toBe('Short $75 NVDA perp');
     expect(at(p, -20)).toEqual({ movePct: -20, beforeUsd: -30, afterUsd: -15 });
     expect(payoffForChoice(s, { kind: 'top_up' } as unknown as Candidate)).toBeNull();
   });

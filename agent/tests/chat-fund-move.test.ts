@@ -8,17 +8,20 @@ import { checkCandidate } from '../src/tools/guard';
 import { closeStore, openStore } from '../src/tools/store';
 import { defaultRule } from '../../lib/risk-rules';
 
-const spec = (o: Partial<ChatFundSpec> = {}): ChatFundSpec => ({ direction: 'add', ruleKey: 'lighter:', venue: 'lighter', amountBaseUnit: toBase(50), amountUsd: '50.00', label: 'Lighter main account', ...o });
+const spec = (o: Partial<ChatFundSpec> = {}): ChatFundSpec => ({ direction: 'add', ruleKey: 'aster:', venue: 'aster', amountBaseUnit: toBase(50), amountUsd: '50.00', label: 'perps account', ...o });
+/** The same wallet with a Derive subaccount rule too ($100 value, $82 used: $18 free). */
+const withDerive = () => { const s = fixtureSnapshot(); s.config.rebalance.rules.push({ ...defaultRule('derive', '42'), minMoveBaseUnit: '7000000' }); s.health['derive:42'] = { connected: true, utilBps: 8200, accountUsd: 100, usedUsd: 82 }; s.moved24hBase['derive:42'] = '0'; return s; };
+const dspec = (o: Partial<ChatFundSpec> = {}): ChatFundSpec => spec({ ruleKey: 'derive:42', venue: 'derive', label: 'Derive account #42', ...o });
 
 describe('which account the user means', () => {
-  const rules = [defaultRule('lighter'), { ...defaultRule('lighter'), accountRef: '3' }, { ...defaultRule('derive'), accountRef: '123' }];
-  it('resolves main, a sub-account number and a Derive account', () => {
-    expect(resolveRule(rules, 'lighter', 'main').accountRef).toBe(''); expect(resolveRule(rules, 'lighter').accountRef).toBe('');
-    expect(resolveRule(rules, 'lighter', '#3').accountRef).toBe('3'); expect(resolveRule(rules, 'derive').accountRef).toBe('123');
+  const rules = [defaultRule('aster'), { ...defaultRule('derive'), accountRef: '123' }];
+  it('resolves the perps account (one per wallet) and a Derive account by number', () => {
+    expect(resolveRule(rules, 'aster', 'main').accountRef).toBe(''); expect(resolveRule(rules, 'aster').accountRef).toBe('');
+    expect(resolveRule(rules, 'derive', '#123').accountRef).toBe('123'); expect(resolveRule(rules, 'derive').accountRef).toBe('123');
   });
   it('never guesses: an account that is not set up lists the ones that are', () => {
-    expect(() => resolveRule(rules, 'lighter', '9')).toThrow(/not one of your set-up accounts.*Lighter main account/);
-    expect(() => resolveRule(rules.slice(0, 2), 'derive')).toThrow(/no Derive account set up on the Risk page/);
+    expect(() => resolveRule(rules, 'aster', '9')).toThrow(/not one of your set-up accounts.*perps account/);
+    expect(() => resolveRule(rules.slice(0, 1), 'derive')).toThrow(/no Derive account set up on the Risk page/);
     expect(() => resolveRule([{ ...defaultRule('derive'), accountRef: '1' }, { ...defaultRule('derive'), accountRef: '2' }], 'derive')).toThrow(/Tell me which account/);
   });
   it('converts dollars to exact base units without rounding up', () => { expect(toBase(50)).toBe('50000000'); expect(toBase(12.349)).toBe('12340000'); });
@@ -42,15 +45,19 @@ describe('building the move from the approved spec', () => {
     const big = fundCandidate(snap, spec({ amountBaseUnit: toBase(900), amountUsd: '900.00' }), 'k'); expect(big.c).not.toBeNull(); expect(checkCandidate(big.c!, snap)).toMatch(/per-move cap/);
     const ks = s(); ks.config.limits.killSwitch = true; expect(checkCandidate(fundCandidate(ks, spec(), 'k').c!, ks)).toMatch(/kill switch/);
   });
-  it('withdraw: only the free margin, and it says it lands on Ethereum', () => {
-    expect(fundCandidate(s(), spec({ direction: 'withdraw', amountBaseUnit: toBase(50), amountUsd: '50.00' }), 'k').problem).toMatch(/only \$18.00 is free/);
-    const { c } = fundCandidate(s(), spec({ direction: 'withdraw', amountBaseUnit: toBase(10), amountUsd: '10.00' }), 'k'); expect(c!.kind).toBe('release'); expect(c!.explain).toMatch(/Ethereum wallet/);
+  it('withdraw from perps is refused: the agent key cannot withdraw, the user signs it in the app', () => {
+    const r = fundCandidate(s(), spec({ direction: 'withdraw', amountBaseUnit: toBase(10), amountUsd: '10.00' }), 'k');
+    expect(r.c).toBeNull(); expect(r.problem).toMatch(/need your wallet signature in the app/);
+  });
+  it('withdraw (options): only the free margin, and it says it lands on Ethereum', () => {
+    expect(fundCandidate(withDerive(), dspec({ direction: 'withdraw', amountBaseUnit: toBase(50), amountUsd: '50.00' }), 'k').problem).toMatch(/only \$18.00 is free/);
+    const { c } = fundCandidate(withDerive(), dspec({ direction: 'withdraw', amountBaseUnit: toBase(10), amountUsd: '10.00' }), 'k'); expect(c!.kind).toBe('release'); expect(c!.explain).toMatch(/Ethereum wallet/);
   });
   it('a request is a pending ask with plain steps, in either direction', () => {
     const snap = s(); const a = fundCandidate(snap, spec(), 'k').c!; const post = fundRequest(snap, spec(), a);
-    expect(post.origin).toBe('chat'); expect(post.kind).toBe('top_up'); expect(post.title).toMatch(/Add \$50.00 to Lighter main account/); expect(post.willDo.join(' ')).toMatch(/pull \$50.00 of USDC from your BNB wallet/);
-    const w = fundCandidate(snap, spec({ direction: 'withdraw', amountBaseUnit: toBase(10), amountUsd: '10.00' }), 'k').c!;
-    expect(fundRequest(snap, spec({ direction: 'withdraw', amountBaseUnit: toBase(10), amountUsd: '10.00' }), w).willDo.join(' ')).toMatch(/lands on Ethereum, not BNB Chain/);
+    expect(post.origin).toBe('chat'); expect(post.kind).toBe('top_up'); expect(post.title).toMatch(/Add \$50.00 to perps account/); expect(post.willDo.join(' ')).toMatch(/pull \$50.00 of USDC from your BNB wallet.*deposit it into perps account on BNB Chain \(no bridge\)/);
+    const d = withDerive(); const w = fundCandidate(d, dspec({ direction: 'withdraw', amountBaseUnit: toBase(10), amountUsd: '10.00' }), 'k').c!;
+    expect(fundRequest(d, dspec({ direction: 'withdraw', amountBaseUnit: toBase(10), amountUsd: '10.00' }), w).willDo.join(' ')).toMatch(/lands on Ethereum, not BNB Chain/);
   });
 });
 

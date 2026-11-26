@@ -24,11 +24,11 @@ const feed = (m: Record<string, string>) => setTextFetcher(async (u) => (u.inclu
 
 /** $2,000 NVDAB. NVDA moves 3.5% a day: 99% loss 8.1% against a 5% limit, so about 38% must be hedged. */
 function hedgeSnap(over: Partial<Snapshot> = {}): Snapshot {
-  const s = fixtureSnapshot({ health: { 'lighter:': { connected: true, utilBps: 5000, accountUsd: 100, usedUsd: 50 } } });
-  s.config.hedge = { enabled: true, driftThresholdPct: 5, sizing: 'loss_limit', news: { enabled: false }, legs: [{ bstock: 'NVDAB', venue: 'lighter', kind: 'perp', market: 'NVDA', marketId: 110, hedgeRatio: 1 }] };
+  const s = fixtureSnapshot({ health: { 'aster:': { connected: true, utilBps: 5000, accountUsd: 100, usedUsd: 50 } } });
+  s.config.hedge = { enabled: true, driftThresholdPct: 5, sizing: 'loss_limit', news: { enabled: false }, legs: [{ bstock: 'NVDAB', venue: 'aster', kind: 'perp', market: 'NVDA', hedgeRatio: 1 }] };
   s.bsc = { ...s.bsc, bstocks: [{ symbol: 'NVDAB', qty: 10, value: 2000, allowanceQty: 10 }] };
-  s.lighterPositions = {}; s.market = { sigmaDay: { NVDA: 0.035 }, at: new Date().toISOString() };
-  s.lighterMain = { equityUsd: 1000, freeUsd: 800 }; s.hedgeProblems = []; s.bridgeEtaSec = 600;
+  s.perpPositions = {}; s.market = { sigmaDay: { NVDA: 0.035 }, at: new Date().toISOString() };
+  s.perpMain = { equityUsd: 1000, freeUsd: 800 }; s.hedgeProblems = []; s.perpEtaSec = 600;
   s.today = { notionalUsd: 0, lossUsd: 0, capitalOffBnbUsd: 1000, pausedReason: null };
   return Object.assign(s, over);
 }
@@ -41,7 +41,7 @@ describe('news is advisory only', () => {
   });
   it('strong bad news raises a flag with no hedge ratio attached', async () => {
     feed({ TSLA: NEG, NVDA: '' });
-    const s = hedgeSnap(); s.config.hedge.news.enabled = true; s.config.hedge.legs = [{ bstock: 'TSLAB', venue: 'lighter', kind: 'perp', market: 'TSLA', marketId: 120, hedgeRatio: 1 }]; s.bsc.bstocks = [{ symbol: 'TSLAB', qty: 10, value: 2500, allowanceQty: 10 }];
+    const s = hedgeSnap(); s.config.hedge.news.enabled = true; s.config.hedge.legs = [{ bstock: 'TSLAB', venue: 'aster', kind: 'perp', market: 'TSLA', hedgeRatio: 1 }]; s.bsc.bstocks = [{ symbol: 'TSLAB', qty: 10, value: 2500, allowanceQty: 10 }];
     const [n] = await computeNews(s);
     expect(n.sentiment).toBe('negative'); expect(n.flagged).toBe(true);
     expect(n).not.toHaveProperty('ratio'); expect(n).not.toHaveProperty('baseRatio');
@@ -150,13 +150,13 @@ describe('hedge plan from the loss limit', () => {
     expect(p.leverage).toBeLessThanOrEqual(3); expect(Date.parse(p.validUntil)).toBeGreaterThan(Date.now());
     expect(p.assumptions.join(' ')).toMatch(/put would cost/); expect(p.worstCase).toMatch(/rises about/);
   });
-  it('spec scenario 3: a slow bridge before the event gives a partial hedge from the margin already on Lighter', () => {
-    const s = hedgeSnap({ lighterMain: { equityUsd: 100, freeUsd: 100 }, bridgeEtaSec: 1500 });
+  it('spec scenario 3: a slow margin deposit before the event gives a partial hedge from the margin already on perps', () => {
+    const s = hedgeSnap({ perpMain: { equityUsd: 100, freeUsd: 100 }, perpEtaSec: 1500 });
     s.config.events = [{ ticker: 'NVDA', at: new Date(Date.now() + 20 * 60_000).toISOString(), kind: 'earnings', gapPct: 12 }];
     const c = buildCandidates(s).candidates[0];
     expect(c.plan!.marginPlan).toBeNull();
     expect(c.plan!.sizeUsd).toBeLessThan(2000 * 0.4);
-    expect(c.plan!.assumptions.join(' ')).toMatch(/bridge time/);
+    expect(c.plan!.assumptions.join(' ')).toMatch(/deposit time/);
   });
 });
 
@@ -205,7 +205,7 @@ describe('confirmation mode', () => {
     const m = memoryActions(); setActionsBackend(m.backend);
     await buildGraph().invoke({ snapshot: confirmSnap() });
     m.approve(m.rows[0].id);
-    const safe = confirmSnap(); safe.health = { 'lighter:': { connected: true, utilBps: 4000, accountUsd: 200, usedUsd: 80 } };
+    const safe = confirmSnap(); safe.health = { 'aster:': { connected: true, utilBps: 4000, accountUsd: 200, usedUsd: 80 } };
     await runApproved(safe);
     expect(m.rows[0].status).toBe('expired'); expect(m.rows[0].result_message).toMatch(/Nothing was moved/);
   });
@@ -214,7 +214,7 @@ describe('confirmation mode', () => {
     const m = memoryActions(); setActionsBackend(m.backend);
     await buildGraph().invoke({ snapshot: confirmSnap() });
     m.approve(m.rows[0].id);
-    const worse = confirmSnap(); worse.health = { 'lighter:': { connected: true, utilBps: 9500, accountUsd: 100, usedUsd: 95 } };
+    const worse = confirmSnap(); worse.health = { 'aster:': { connected: true, utilBps: 9500, accountUsd: 100, usedUsd: 95 } };
     await runApproved(worse);
     expect(m.rows[0].status).toBe('expired'); expect(m.rows[0].result_message).toMatch(/25%/);
   });

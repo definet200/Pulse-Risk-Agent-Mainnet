@@ -24,8 +24,8 @@ export function payoff(ticker: string, holdingUsd: number, h: PayoffHedge, moves
     return h.contracts * Math.max(0, h.strike - h.spot * (1 + r));
   };
   const points = moves.map((m) => { const r = m / 100; const before = holdingUsd * r; return { movePct: m, beforeUsd: r2(before), afterUsd: r2(before + hedgeAt(r) - cost) }; });
-  const label = h.kind === 'perp' ? `Short $${r2(h.shortUsd)} ${ticker} perp on Lighter`
-    : h.kind === 'proxy' ? `Short $${r2(h.shortUsd)} ${h.via} perp on Lighter (proxy for ${ticker}, correlation ${h.beta})`
+  const label = h.kind === 'perp' ? `Short $${r2(h.shortUsd)} ${ticker} perp`
+    : h.kind === 'proxy' ? `Short $${r2(h.shortUsd)} ${h.via} perp (proxy for ${ticker}, correlation ${h.beta})`
     : `${h.contracts} ${ticker} put${h.contracts === 1 ? '' : 's'} at strike ${h.strike} on Derive`;
   const note = h.kind === 'put' ? `Put: the loss below the strike is covered; the upside is kept, minus $${r2(cost)} premium and fees. Profit and loss at expiry.`
     : h.kind === 'proxy' ? `Proxy: the offset shown is the expected one; with correlation ${h.beta} about ${Math.round(Math.sqrt(Math.max(0, 1 - h.beta ** 2)) * 100)}% of ${ticker}'s risk stays. Fees $${r2(cost)}; funding not included.`

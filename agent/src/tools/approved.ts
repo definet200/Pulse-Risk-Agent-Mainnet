@@ -6,6 +6,7 @@ import { log } from '../log';
 import type { Candidate, Snapshot } from '../types';
 import * as app from './appApi';
 import { filterCandidates } from './guard';
+import { legKeyOf } from './hedgeLeg';
 import { buildCandidates } from './planner';
 import { candidateFromSpec, priceStillOk, quoteSpec, type ChatTradeSpec } from '../chat/trade';
 import { moveProblems, type ChatMoveSpec } from '../chat/move';
@@ -26,7 +27,7 @@ const blank = (snapshot: Snapshot, chosen: Candidate | null): AgentStateT => ({
 function matches(a: ActionRow, c: Candidate): boolean {
   const d = a.detail as { kind?: string; ruleKey?: string | null; hedgeMarket?: string | null; hedgeKey?: string | null };
   if (d.kind !== c.kind) return false;
-  return c.kind === 'hedge' ? (d.hedgeKey ? (c.hedge?.key ?? `lighter:${c.hedge?.marketId}`) === d.hedgeKey : c.hedge?.market === d.hedgeMarket) : c.ruleKey === d.ruleKey;
+  return c.kind === 'hedge' ? (d.hedgeKey ? (c.hedge ? legKeyOf(c.hedge) : null) === d.hedgeKey : c.hedge?.market === d.hedgeMarket) : c.ruleKey === d.ruleKey;
 }
 
 function withinAsked(a: ActionRow, c: Candidate): boolean {

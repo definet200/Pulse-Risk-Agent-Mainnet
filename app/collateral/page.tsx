@@ -9,7 +9,7 @@ import { fmtNum, fmtPct, fmtUsd } from '@/lib/format';
 export default function CollateralPage() {
   const tickers = useBStockTickers();
   const p = usePortfolio(DEFAULT_HAIRCUT);
-  const venueMargin = (p.lighter.equity ?? 0) + (p.derive.equity ?? 0);
+  const venueMargin = (p.perps.equity ?? 0) + (p.derive.equity ?? 0);
   const stables = (p.bsc.usdc ?? 0) + (p.bsc.usdt ?? 0);
   return (
     <div className="mx-auto max-w-6xl space-y-4">

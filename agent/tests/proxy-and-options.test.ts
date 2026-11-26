@@ -24,27 +24,27 @@ describe('returnCorrelation', () => {
 
 describe('pickProxy: measured, never assumed', () => {
   beforeEach(() => clearProxyCache());
-  const ids = { MSTR: 122, BTC: 1, US500: 180, US100: 181, SPY: 128 };
+  const ids = ['MSTR', 'BTC', 'SPY', 'QQQ'];   // tickers the perps venue lists
   const btc = noise(2, 100); const other = noise(3, 100);
   // MSTR = 0.8 x BTC moves + independent noise.
   const mstr = btc.map((r, i) => 0.8 * r + 0.4 * other[i]);
-  const closes = async (_n: string, id: number) => (id === 122 ? walk(mstr) : id === 1 ? walk(btc, 90_000) : walk(other));
+  const closes = async (_n: string, t: string) => (t === 'MSTR' ? walk(mstr) : t === 'BTC' ? walk(btc, 90_000) : walk(other));
 
   it('MSTR proxies through BTC with its measured correlation and the latest BTC price', async () => {
     const p = await pickProxy('mainnet', 'MSTR', ids, closes as never);
-    expect(p?.via).toBe('BTC'); expect(p?.viaMarketId).toBe(1);
+    expect(p?.via).toBe('BTC');
     expect(p!.beta).toBeGreaterThan(0.8); expect(p!.beta).toBeLessThanOrEqual(0.95);
     expect(p!.price).toBeGreaterThan(80_000);
   });
   it('a weak correlation is not offered', async () => {
-    const p = await pickProxy('mainnet', 'MSTR', ids, (async (_n: string, id: number) => (id === 122 ? walk(noise(9, 100)) : walk(noise(4, 100)))) as never);
+    const p = await pickProxy('mainnet', 'MSTR', ids, (async (_n: string, t: string) => (t === 'MSTR' ? walk(noise(9, 100)) : walk(noise(4, 100)))) as never);
     expect(p).toBeNull();
   });
-  it('no own Lighter market = nothing to measure = no proxy', async () => {
+  it('no own perps market = nothing to measure = no proxy', async () => {
     expect(await pickProxy('mainnet', 'ZZZ', ids, closes as never)).toBeNull();
   });
-  it('SPY tries US500, tech names US100, MSTR BTC', () => {
-    expect(candidatesFor('SPY')).toEqual(['US500']); expect(candidatesFor('NVDA')).toEqual(['US100']); expect(candidatesFor('MSTR')).toEqual(['BTC']);
+  it('SPY tries QQQ (both have their own perps), tech names QQQ, MSTR BTC, others SPY then QQQ', () => {
+    expect(candidatesFor('SPY')).toEqual(['QQQ']); expect(candidatesFor('NVDA')).toEqual(['QQQ']); expect(candidatesFor('MSTR')).toEqual(['BTC']); expect(candidatesFor('XOM')).toEqual(['SPY', 'QQQ']);
   });
 });
 
@@ -80,33 +80,33 @@ describe('collectSnapshot wires live puts and measured proxies', () => {
   afterEach(() => closeStore());
   const cfg = (): AgentConfig => structuredClone({ ...DEFAULT_CONFIG, hedge: { ...DEFAULT_CONFIG.hedge, enabled: true, sizing: 'loss_limit', legs: [] } });
   const deps = (): CollectDeps => ({
-    getRuleStates: async () => ({}), getLighterCreds: async () => { throw new Error('no key'); }, getDeriveCreds: async () => { throw new Error('no key'); },
-    lighterAccount: async () => null, deriveSubaccount: async () => { throw new Error('unused'); },
+    getRuleStates: async () => ({}), getAsterCreds: async () => { throw new Error('no key'); }, getDeriveCreds: async () => { throw new Error('no key'); },
+    asterAccount: async () => { throw new Error('unused'); }, deriveSubaccount: async () => { throw new Error('unused'); },
     funds: async (_w, symbols) => ({ funds: { usdcUsd: 0, usdtUsd: 0, allowanceUsdcBase: '0', bstocks: symbols.map((s) => ({ symbol: s, qty: s === 'MSTRB' || s === 'NVDAB' ? 1 : 0, value: s === 'MSTRB' ? 76 : s === 'NVDAB' ? 150 : 0, allowanceQty: 0 })) }, problems: [] }),
     moved24h: () => 0n,
-    lighterMarkets: async () => [{ symbol: 'NVDA', marketId: 110 }, { symbol: 'MSTR', marketId: 122 }, { symbol: 'BTC', marketId: 1 }, { symbol: 'US100', marketId: 181 }],
-    sigma: async (_n, id) => ({ 110: 0.08, 122: 0.063, 1: 0.03, 181: 0.015 } as Record<number, number>)[id] ?? null,
+    perpMarkets: async () => ['NVDA', 'MSTR', 'BTC', 'QQQ'],
+    sigma: async (_n, t) => ({ NVDA: 0.08, MSTR: 0.063, BTC: 0.03, QQQ: 0.015 } as Record<string, number>)[t] ?? null,
     options: async (_n, t) => (t === 'NVDA' ? { ticker: 'NVDA', spot: 150, expiries: [{ expiry: new Date(Date.now() + 7 * 86_400_000).toISOString(), puts: [{ strike: 150, bid: 5.6, ask: 6.1, iv: 0.7, delta: -0.53, size: 33 }] }], feeFraction: 0.0003, settlement: 'cash', quotesOffHours: true, contractSize: 1 } : null),
-    proxy: async (_n, t) => (t === 'MSTR' ? { via: 'BTC', viaMarketId: 1, beta: 0.72, price: 90_000 } : t === 'NVDA' ? { via: 'US100', viaMarketId: 181, beta: 0.8, price: 21_000 } : null),
+    proxy: async (_n, t) => (t === 'MSTR' ? { via: 'BTC', beta: 0.72, price: 90_000 } : t === 'NVDA' ? { via: 'QQQ', beta: 0.8, price: 21_000 } : null),
   });
 
   it('NVDA gets its Derive put; MSTR and NVDA each show their measured proxy; the user config is untouched', async () => {
     const c = cfg();
     const s = await collectSnapshot('0x1111111111111111111111111111111111111111', 'mainnet', c, deps());
     expect(Object.keys(s.options ?? {})).toEqual(['NVDA']);
-    expect(s.config.risk.proxyMap).toEqual({ MSTR: { via: 'BTC', beta: 0.72 }, NVDA: { via: 'US100', beta: 0.8 } });
-    expect(s.proxyPrices).toEqual({ BTC: 90_000, US100: 21_000 });
+    expect(s.config.risk.proxyMap).toEqual({ MSTR: { via: 'BTC', beta: 0.72 }, NVDA: { via: 'QQQ', beta: 0.8 } });
+    expect(s.proxyPrices).toEqual({ BTC: 90_000, QQQ: 21_000 });
     expect(s.market?.sigmaDay.BTC).toBe(0.03);
     const r = assessRisk(s)!;
     const nv = r.tickers.find((t) => t.ticker === 'NVDA')!; const ms = r.tickers.find((t) => t.ticker === 'MSTR')!;
-    expect(nv.putOk).toBe(true); expect(nv.proxyVia?.ticker).toBe('US100'); expect(nv.bucket).toBe('direct');
-    expect(ms.perpOk).toBe(true); expect(ms.proxyVia).toMatchObject({ ticker: 'BTC', beta: 0.72, marketId: 1 });
+    expect(nv.putOk).toBe(true); expect(nv.proxyVia?.ticker).toBe('QQQ'); expect(nv.bucket).toBe('direct');
+    expect(ms.perpOk).toBe(true); expect(ms.proxyVia).toMatchObject({ ticker: 'BTC', beta: 0.72, price: 90_000 });
     expect(c.risk.proxyMap).toEqual({}); expect(c.hedge.legs).toEqual([]);
   });
 
   it("the user's own proxy choice wins", async () => {
-    const c = cfg(); c.risk.proxyMap = { MSTR: { via: 'US100', beta: 0.5 } };
+    const c = cfg(); c.risk.proxyMap = { MSTR: { via: 'QQQ', beta: 0.5 } };
     const s = await collectSnapshot('0x1111111111111111111111111111111111111111', 'mainnet', c, deps());
-    expect(s.config.risk.proxyMap.MSTR).toEqual({ via: 'US100', beta: 0.5 });
+    expect(s.config.risk.proxyMap.MSTR).toEqual({ via: 'QQQ', beta: 0.5 });
   });
 });

@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 
 const W = '0xFfa4Bcc5576995865B083224aD49da28B6a02c7A';
-const P = { wallet: W, network: 'testnet', venue: 'lighter', accountRef: '', structural_risk: 'risk', reasoning: 'why',
+const P = { wallet: W, network: 'testnet', venue: 'aster', accountRef: '', structural_risk: 'risk', reasoning: 'why',
   proposed_rule: { top_up_trigger: 0.62, restore_target: 0.45, release_trigger: 0.25, primary_source: 'bstocks_bnb' }, idempotencyKey: 'prop-aaaaaaaa' } as const;
 
 let store: typeof import('../lib/server/agent-store');

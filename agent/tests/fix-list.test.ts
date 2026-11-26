@@ -21,15 +21,15 @@ interface O { hold: [string, number, number][]; mode?: 'confirm' | 'autonomous';
 function build(o: O): Snapshot {
   const P = o.hold.reduce((a, h) => a + h[2], 0); const tk = (x: string) => x.replace(/B$/, '');
   const s = fixtureSnapshot({ health: {} }); s.config.rebalance.enabled = false; s.config.mode = o.mode ?? 'confirm'; if (s.config.mode === 'autonomous') s.config.limits.autonomyExpiresAt = hours(24);
-  const perp = Object.entries(MKT).filter(([, v]) => v.perp).map(([t, v]) => ({ bstock: `${t}B`, venue: 'lighter', kind: 'perp', market: t, marketId: v.perp!, hedgeRatio: 1 }));
+  const perp = Object.entries(MKT).filter(([, v]) => v.perp).map(([t, v]) => ({ bstock: `${t}B`, venue: 'aster', kind: 'perp', market: t, hedgeRatio: 1 }));
   const putOnly = o.hold.filter((h) => !MKT[tk(h[0])].perp && MKT[tk(h[0])].put).map((h) => ({ bstock: h[0], venue: 'derive', kind: 'put', market: tk(h[0]), hedgeRatio: 1, put: { strikePct: 100, minDaysToExpiry: 2, targetDaysToExpiry: 7 } }));
   s.config.hedge = { enabled: true, driftThresholdPct: 5, sizing: 'loss_limit', news: { enabled: false }, legs: [...perp, ...putOnly] as never };
   s.config.risk = { ...s.config.risk, lossTolerancePct: o.loss ?? 5, premiumBudgetWeeklyPct: ((o.budget ?? P * 0.01) / P) * 100, fullyHedgeTickers: o.full ?? [], eventLeadHours: 24, proxyMap: o.proxy ?? {} };
   Object.assign(s.config.limits, { maxNotionalPerTradeUsd: o.limits?.[0] ?? 50_000, maxNotionalPerDayUsd: o.limits?.[1] ?? 100_000, maxLeverage: 3, dailyLossCapUsd: 1000, maxCapitalOffBnbUsd: 10_000, killSwitch: !!o.kill });
   s.config.events = (o.events ?? []).map(([t, h]) => ({ ticker: t, at: hours(h), kind: 'earnings' as const, gapPct: 12 }));
   s.bsc = { usdcUsd: o.usdc ?? 3000, usdtUsd: 0, allowanceUsdcBase: String(Math.round((o.allow ?? 2500) * 1e6)), bstocks: o.hold.map((h) => ({ symbol: h[0], qty: h[1], value: h[2], allowanceQty: h[1] })) };
-  s.lighterPositions = Object.fromEntries(Object.entries(o.shorts ?? {}).map(([t, u]) => [MKT[t].perp!, -u]));
-  s.lighterMain = { equityUsd: o.lEq ?? 0, freeUsd: o.lEq ?? 0 }; s.deriveFree = { ref: '42', freeUsd: o.dFree ?? 0 }; s.bridgeEtaSec = 1200; s.deriveEtaSec = 1800; s.hedgeProblems = [];
+  s.perpPositions = Object.fromEntries(Object.entries(o.shorts ?? {}).map(([t, u]) => [t, -u]));
+  s.perpMain = { equityUsd: o.lEq ?? 0, freeUsd: o.lEq ?? 0 }; s.deriveFree = { ref: '42', freeUsd: o.dFree ?? 0 }; s.perpEtaSec = 1200; s.deriveEtaSec = 1800; s.hedgeProblems = [];
   const prox = Object.values(o.proxy ?? {}).map((x) => x.via);
   s.market = { sigmaDay: Object.fromEntries([...o.hold.map((h) => tk(h[0])), ...prox].filter((t) => t !== o.noPrice).map((t) => [t, MKT[t].sigma])), at: new Date().toISOString() };
   s.proxyPrices = Object.fromEntries(prox.map((t) => [t, MKT[t].spot])); if (o.noPrice) s.unassessed = { [o.noPrice]: 'no price from the venue feed' };
@@ -193,7 +193,7 @@ describe('blockers', () => {
 
 describe('review round 4: parked capital, capital-efficient mix, staged autonomy, allowance option', () => {
   const case4 = () => build({ hold: [['JPMB', 250, 55_000], ['XOMB', 500, 55_000], ['MSTRB', 100, 30_000], ['AAPLB', 50, 10_000]], loss: 4, budget: 1500, lEq: 5000, usdc: 20_000, allow: 15_000, proxy: { MSTR: { via: 'COIN', beta: 0.7 }, JPM: { via: 'SPY', beta: 0.7 }, XOM: { via: 'SPY', beta: 0.5 } } });
-  it('Case 4: the $5,000 already on Lighter counts against the off-BNB cap, so cap is never exceeded', () => {
+  it('Case 4: the $5,000 already on perps counts against the off-BNB cap, so cap is never exceeded', () => {
     const s = case4(); const cs = hedges(s);
     for (const c of cs) { const mv = c.plan!.marginPlan?.moveUsd ?? 0; expect(5000 + mv).toBeLessThanOrEqual(10_000 + 1e-6); expect(policyCheck(c, s).block).toBeNull(); }
     const coin = cs.find((c) => c.hedge!.proxyFor === 'MSTR')!; expect(coin.plan!.leverage).toBeGreaterThan(2.4);   // the proxy market's own gap sets the leverage
@@ -207,7 +207,7 @@ describe('review round 4: parked capital, capital-efficient mix, staged autonomy
   it('Case 3: lists the perp route with its fees and margin, and raising the allowance', () => {
     const s = build({ hold: [['TSLAB', 80, 20_000]], budget: 100, dFree: 400, usdc: 500, allow: 300, events: [['TSLA', 6]] });
     const o = hedges(s)[0].plan!.options!.join(' | ');
-    expect(o).toMatch(/Hedge the rest with a TSLA perp instead: about \$\d+ in fees but \$[\d,]+ of margin on Lighter, so raise your BNB allowance to about \$[\d,]+/);
+    expect(o).toMatch(/Hedge the rest with a TSLA perp instead: about \$\d+ in fees but \$[\d,]+ of margin on perps, so raise your BNB allowance to about \$[\d,]+/);
     expect(o).toMatch(/Raise your weekly protection budget/); expect(o).toMatch(/Accept a higher loss/);
   });
   it('autonomous perp: the plan is whole but step 1 stays under the per-trade cap', () => {

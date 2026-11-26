@@ -22,7 +22,7 @@ type Funding = Pick<AgentConfig['rebalance'], 'sources' | 'sellOrder' | 'keepBsc
 const E18 = 10n ** 18n;
 const usd = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const num = (v: bigint | null | undefined) => (v ? Number(fmtUnits(v, 18, 6).replace(/,/g, '')) : 0);
-const MIN_TOPUP = 6; // smallest venue top-up (Lighter $6, Derive $7)
+const MIN_TOPUP = 6; // smallest venue top-up (perps $6, options $7)
 
 export function FundingPanel({ value, prices, onSave }: { value: Funding; prices: Record<string, number | null>; onSave: (next: Funding) => Promise<string | null> }) {
   const { address } = useAccount();

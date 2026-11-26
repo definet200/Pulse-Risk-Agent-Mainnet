@@ -1,33 +1,36 @@
 'use client';
 import { useState } from 'react';
-import { useAccount, useReadContracts } from 'wagmi';
-import { erc20Abi, type Address } from 'viem';
+import { useAccount, useConfig, useReadContracts } from 'wagmi';
+import { readContract } from 'wagmi/actions';
+import { erc20Abi, formatUnits, type Address } from 'viem';
 import clsx from 'clsx';
 import { ArrowDown } from 'lucide-react';
 import { useVenueNetwork } from '@/lib/network';
 import { useSession } from '@/lib/session';
 import { useBscBalances } from '@/lib/hooks/useBscBalances';
-import { getJson, useLighterAccount, useDeriveAccount } from '@/lib/hooks/useVenues';
+import { getJson, useAsterAccount, useDeriveAccount } from '@/lib/hooks/useVenues';
 import { useTxRunner, type Log } from '@/components/funding/useTxRunner';
 import { WithdrawFlow } from '@/components/funding/WithdrawFlow';
-import { DERIVE, DERIVE_DEFAULT_MANAGER_ID, DERIVE_USDC_ASSET, LIGHTER, LIGHTER_USDC_ASSET } from '@/lib/venues';
-import { DERIVE_ACTION_MANAGER_ABI, LIGHTER_DEPOSIT_ABI, MOCK_MINT_ABI } from '@/lib/l1';
+import { DERIVE, DERIVE_DEFAULT_MANAGER_ID, DERIVE_USDC_ASSET, ETH_USDC } from '@/lib/venues';
+import { DERIVE_ACTION_MANAGER_ABI, MOCK_MINT_ABI } from '@/lib/l1';
+import { ASTER_DEPOSIT_DECIMALS, ASTER_DEPOSIT_TOKEN, ASTER_MIN_DEPOSIT, ASTER_VAULT_BSC, asterDepositSteps, usdcToUsdtSwapSteps, type AsterAccountView } from '@/lib/aster-view';
+import { BSC_USDC, BSC_USDT, PANCAKE_QUOTER_V2, PANCAKE_SMART_ROUTER, QUOTER_V2_ABI, STABLE_HOP_FEE } from '@/lib/bsc';
+import { minOut } from '@/lib/swap-path';
 import { fmtUnits, safeParseUnits } from '@/lib/format';
 import type { BridgeRoute, RelayQuote } from '@/lib/relay';
 
-type Flow = 'bsc_to_lighter' | 'bsc_to_eth' | 'eth_to_lighter' | 'eth_to_derive' | 'withdraw' | 'eth_to_bsc';
+type Flow = 'bsc_to_perps' | 'bsc_to_eth' | 'eth_to_derive' | 'withdraw' | 'eth_to_bsc';
 const FLOWS: { id: Flow; title: string; sub: string; mainnetOnly?: boolean }[] = [
-  { id: 'bsc_to_lighter', title: 'BNB → Perps', sub: 'Relay delivers straight into your perps account · ~1 min', mainnetOnly: true },
-  { id: 'bsc_to_eth', title: 'BNB → Ethereum', sub: 'Relay · for options, or your first perps deposit', mainnetOnly: true },
-  { id: 'eth_to_lighter', title: 'Ethereum → Perps', sub: 'Direct deposit · creates the account' },
+  { id: 'bsc_to_perps', title: 'BNB → Perps', sub: 'Deposit USDT straight from your BNB wallet · no bridge', mainnetOnly: true },
+  { id: 'bsc_to_eth', title: 'BNB → Ethereum', sub: 'Relay · for options', mainnetOnly: true },
   { id: 'eth_to_derive', title: 'Ethereum → Options', sub: 'Direct deposit via ActionManager · ~2 min' },
-  { id: 'withdraw', title: 'Perps / Options → Ethereum', sub: 'Withdraw to your own wallet · 14–26 min' },
+  { id: 'withdraw', title: 'Withdraw from perps / options', sub: 'To your own wallet · perps → BNB, options → Ethereum' },
   { id: 'eth_to_bsc', title: 'Ethereum → BNB', sub: 'Relay · bring venue withdrawals home', mainnetOnly: true },
 ];
 
 export default function FundingPage() {
   const { network } = useVenueNetwork();
-  const [flow, setFlow] = useState<Flow>(network === 'testnet' ? 'eth_to_lighter' : 'bsc_to_lighter');
+  const [flow, setFlow] = useState<Flow>(network === 'testnet' ? 'eth_to_derive' : 'bsc_to_perps');
   const testnet = network === 'testnet';
   return (
     <div className="mx-auto grid max-w-6xl gap-4 lg:grid-cols-[320px_1fr]">
@@ -46,9 +49,9 @@ export default function FundingPage() {
         {testnet && <TestnetFaucets />}
       </div>
       <div className="panel p-6">
-        {flow === 'bsc_to_lighter' || flow === 'bsc_to_eth' || flow === 'eth_to_bsc' ? <RelayFlow route={flow} />
+        {flow === 'bsc_to_eth' || flow === 'eth_to_bsc' ? <RelayFlow route={flow} />
           : flow === 'withdraw' ? <WithdrawFlow onBridge={() => setFlow('eth_to_bsc')} />
-          : flow === 'eth_to_lighter' ? <LighterDirect /> : <DeriveDirect />}
+          : flow === 'bsc_to_perps' ? <AsterDeposit /> : <DeriveDirect />}
       </div>
     </div>
   );
@@ -57,11 +60,9 @@ export default function FundingPage() {
 /** Every place USDC can sit, all owned by the same MetaMask address. The app never holds funds. */
 function WhereMoneyIs() {
   const { network } = useVenueNetwork();
-  const { address } = useAccount();
   const bsc = useBscBalances();
-  const l1 = useL1Usdc(LIGHTER[network].usdc, LIGHTER[network].l1ChainId);
   const dl1 = useL1Usdc(DERIVE[network].usdc, DERIVE[network].chainId);
-  const lighter = useLighterAccount(address);
+  const perps = useAsterAccount();
   const derive = useDeriveAccount();
   const l1Name = network === 'testnet' ? 'Sepolia' : 'Ethereum';
   const box = (title: string, sub: string, value: string, note: string, accent?: boolean) => (
@@ -80,15 +81,15 @@ function WhereMoneyIs() {
         <div className="text-xs text-muted">All owned by your MetaMask address. Pulse Risk never holds funds; it only moves them between your own accounts.</div>
       </div>
       <div className="flex flex-wrap gap-2 md:flex-nowrap">
-        {box('BNB Chain wallet', 'MetaMask · mainnet', `${fmtUnits(bsc.usdc, 18, 2)} USDC`, 'bStocks collateral + rebalance source')}
+        {box('BNB Chain wallet', 'MetaMask · mainnet', `${fmtUnits(bsc.usdc, 18, 2)} USDC · ${fmtUnits(bsc.usdt, 18, 2)} USDT`, 'bStocks collateral, perps deposits, rebalance source')}
         {arrow}
-        {box(`${l1Name} wallet`, 'MetaMask · L1',
-          network === 'testnet' ? `${fmtUnits(l1.bal ?? null, l1.dec, 2)} / ${fmtUnits(dl1.bal ?? null, dl1.dec, 2)}` : `${fmtUnits(l1.bal ?? null, l1.dec, 2)} USDC`,
-          network === 'testnet' ? 'perps test USDC / options mock USDC' : 'transit: Relay lands here for options')}
+        {box(`${l1Name} wallet`, 'MetaMask · L1', `${fmtUnits(dl1.bal ?? null, dl1.dec, 2)} USDC`,
+          network === 'testnet' ? 'options mock USDC' : 'transit: Relay lands here for options')}
         {arrow}
         <div className="flex flex-1 flex-col gap-2 sm:flex-row">
-          {box('Perps account', lighter.data ? `#${lighter.data.index} · perps margin` : 'perps margin',
-            lighter.data ? `$${Number(lighter.data.collateral).toFixed(2)}` : lighter.isLoading ? '—' : 'no account', 'on perps (zk L2 of Ethereum)', true)}
+          {box('Perps account', 'perps margin (USDT)',
+            perps.data?.state === 'ok' ? `$${(perps.data.walletBalance ?? 0).toFixed(2)}` : perps.data?.state === 'no_deposit' ? 'no deposit yet' : perps.data?.state === 'needs_agent' ? 'agent needed' : '—',
+            'on perps (BNB Chain)', true)}
           {box('Options subaccount', ds ? `#${ds.subaccount_id} · options margin` : 'options margin', deriveVal, 'on options (settles to Ethereum)', true)}
         </div>
       </div>
@@ -123,11 +124,9 @@ function useL1Usdc(usdc: Address, chainId: number) {
 }
 
 function RelayFlow({ route }: { route: BridgeRoute }) {
-  const { address } = useAccount();
   const { wallet, signIn } = useSession();
   const bsc = useBscBalances();
-  const eth = useL1Usdc(LIGHTER.mainnet.usdc, 1);
-  const lighter = useLighterAccount(address);
+  const eth = useL1Usdc(ETH_USDC, 1);
   const tx = useTxRunner();
   const [amount, setAmount] = useState('');
   const [quote, setQuote] = useState<RelayQuote | null>(null);
@@ -136,7 +135,7 @@ function RelayFlow({ route }: { route: BridgeRoute }) {
   const inDec = fromBsc ? 18 : 6;
   const units = safeParseUnits(amount, inDec);
   const bal = fromBsc ? bsc.usdc : eth.bal ?? null;
-  const dest = route === 'bsc_to_lighter' ? `Perps account #${lighter.data?.index ?? '—'}` : route === 'bsc_to_eth' ? 'Ethereum USDC (your wallet)' : 'BNB Chain USDC (your wallet)';
+  const dest = route === 'bsc_to_eth' ? 'Ethereum USDC (your wallet)' : 'BNB Chain USDC (your wallet)';
 
   async function getQuote() {
     setErr(null); setQuote(null);
@@ -175,7 +174,6 @@ function RelayFlow({ route }: { route: BridgeRoute }) {
           <div className="flex justify-between"><span className="text-muted">ETA</span><span>~{quote.timeEstimateSec}s</span></div>
         </div>}
       </div>
-      {route === 'bsc_to_lighter' && lighter.data === null && <p className="mt-3 text-xs text-accent">You don&apos;t have a perps account yet. Bridge BNB → Ethereum first, then use Ethereum → Perps; that first deposit creates the account.</p>}
       <div className="mt-4 flex gap-2">
         <button className="btn-ghost flex-1" disabled={!units || tx.busy} onClick={() => void getQuote()}>Get quote</button>
         <button className="btn-primary flex-1" disabled={!quote || tx.busy || (bal !== null && units !== null && units > bal)} onClick={() => void execute()}>{tx.busy ? 'Working…' : 'Bridge'}</button>
@@ -187,32 +185,99 @@ function RelayFlow({ route }: { route: BridgeRoute }) {
   );
 }
 
-function LighterDirect() {
+/**
+ * BNB Chain → perps: the user's own wallet deposits USDT into the perps vault (approve if needed → deposit, broker 1).
+ * Paying with USDC swaps it to USDT on PancakeSwap first. Then the perps balance is polled until it rises.
+ */
+function AsterDeposit() {
   const { network } = useVenueNetwork();
   const { address } = useAccount();
-  const cfg = LIGHTER[network];
-  const l1 = useL1Usdc(cfg.usdc, cfg.l1ChainId);
-  const lighter = useLighterAccount(address);
+  const { wallet, signIn } = useSession();
+  const config = useConfig();
+  const bsc = useBscBalances();
+  const perps = useAsterAccount();
   const tx = useTxRunner();
+  const [pay, setPay] = useState<'USDT' | 'USDC'>('USDT');
   const [amount, setAmount] = useState('');
-  const units = safeParseUnits(amount, l1.dec);
-  const min = 5n * 10n ** BigInt(l1.dec);
+  const units = safeParseUnits(amount, ASTER_DEPOSIT_DECIMALS);
+  const bal = pay === 'USDT' ? bsc.usdt : bsc.usdc;
+  const tooSmall = units !== null && units < ASTER_MIN_DEPOSIT;
+  const tooBig = units !== null && bal !== null && units > bal;
+
+  const allowance = (token: Address, spender: Address) =>
+    readContract(config, { address: token, abi: erc20Abi, functionName: 'allowance', args: [address!, spender], chainId: 56 });
+  const usdtBalance = () => readContract(config, { address: BSC_USDT, abi: erc20Abi, functionName: 'balanceOf', args: [address!], chainId: 56 });
+  const perpsBalance = async () => (await getJson<AsterAccountView>(`/api/trade/aster-account?network=${network}`).catch(() => null));
+
   async function go() {
     if (!units || !address) return;
     await tx.run(async () => {
-      await tx.call(cfg.l1ChainId, 'Approve USDC (exact amount)', cfg.usdc, erc20Abi, 'approve', [cfg.zkLighter, units]);
-      await tx.call(cfg.l1ChainId, 'Deposit to perps', cfg.zkLighter, LIGHTER_DEPOSIT_ABI, 'deposit', [address, LIGHTER_USDC_ASSET, 0, units]);
-      tx.log({ text: 'Perps credits L1 deposits in a few minutes. Your balance updates on the Portfolio page.', kind: 'ok' });
+      let depositUnits = units;
+      if (pay === 'USDC') {
+        // Quote the 0.01% USDC/USDT pool and accept at most 0.3% slippage.
+        const [quoted] = await readContract(config, { address: PANCAKE_QUOTER_V2, abi: QUOTER_V2_ABI, functionName: 'quoteExactInputSingle', args: [{ tokenIn: BSC_USDC, tokenOut: BSC_USDT, amountIn: units, fee: STABLE_HOP_FEE, sqrtPriceLimitX96: 0n }], chainId: 56 });
+        const before = await usdtBalance();
+        const steps = usdcToUsdtSwapSteps(address, units, minOut(quoted, 30), await allowance(BSC_USDC, PANCAKE_SMART_ROUTER), BigInt(Math.floor(Date.now() / 1000) + 600));
+        for (const st of steps) await tx.raw(56, st.label, st.to, st.data);
+        depositUnits = (await usdtBalance()) - before;
+        if (depositUnits <= 0n) throw new Error('The swap returned no USDT; nothing was deposited');
+        tx.log({ text: `Swapped to ${formatUnits(depositUnits, ASTER_DEPOSIT_DECIMALS)} USDT`, kind: 'ok' });
+      }
+      const start = await perpsBalance();
+      for (const st of asterDepositSteps(depositUnits, await allowance(ASTER_DEPOSIT_TOKEN, ASTER_VAULT_BSC))) await tx.raw(56, st.label, st.to, st.data);
+      if (!start || start.state === 'needs_agent') {
+        tx.log({ text: 'Deposited. Register the perps agent (Agent keys) to see it as margin.', kind: 'ok' });
+        return;
+      }
+      const base = start.walletBalance ?? 0;
+      const human = formatUnits(depositUnits, ASTER_DEPOSIT_DECIMALS);
+      tx.log({ text: 'Waiting for perps to credit the deposit…', kind: 'info' });
+      const credited = async (secs: number) => {
+        for (let t = 0; t < secs; t += 6) {
+          await new Promise((r) => setTimeout(r, 6_000));
+          const v = await perpsBalance();
+          if (v?.state === 'ok' && (v.walletBalance ?? 0) > base + 0.01) return true;
+        }
+        return false;
+      };
+      if (await credited(90)) { tx.log({ text: `${human} USDT is now perps margin`, kind: 'ok' }); return; }
+      // UNVERIFIED on BNB Chain: on Arbitrum a vault deposit was credited to the venue's SPOT balance and needed a
+      // spot → futures transfer. Do that once, signed by the agent (it only moves money between the user's own balances).
+      tx.log({ text: 'Not in margin after 90 s; moving it from the perps spot balance to margin…', kind: 'info' });
+      try {
+        await getJson('/api/trade/aster-transfer', { method: 'POST', headers: { 'content-type': 'application/json', 'idempotency-key': `dep-${Date.now()}-${Math.random().toString(36).slice(2)}` }, body: JSON.stringify({ network, amount: human }) });
+      } catch (e) {
+        tx.log({ text: `Transfer not needed or not possible yet: ${(e as Error).message}`, kind: 'info' });
+      }
+      tx.log(await credited(60)
+        ? { text: `${human} USDT is now perps margin`, kind: 'ok' }
+        : { text: 'The deposit is confirmed on BNB Chain but perps has not credited it yet. It usually appears within a few minutes; check Portfolio.', kind: 'info' });
     });
+    void perps.refetch(); bsc.refetch();
   }
+
+  if (network === 'testnet') return <div><h2 className="text-xl font-semibold">BNB → Perps</h2><p className="mt-3 text-sm text-muted">Perps deposits are mainnet only. Switch the sidebar to Mainnet.</p></div>;
+  if (!wallet) return <div><h2 className="text-xl font-semibold">BNB → Perps</h2><p className="my-3 text-sm text-muted">Sign in first so the app can read your perps balance.</p><button className="btn-primary" onClick={() => void signIn()}>Sign in</button></div>;
   return (
     <div className="mx-auto max-w-lg">
-      <h2 className="mb-1 text-xl font-semibold">Ethereum → Perps</h2>
-      <p className="mb-4 text-sm text-muted">{network === 'testnet' ? 'Sepolia' : 'Ethereum mainnet'} · {lighter.data ? `account #${lighter.data.index}` : 'creates your perps account'} · gas paid in {network === 'testnet' ? 'Sepolia ' : ''}ETH</p>
-      <AmountBox label={`USDC on ${network === 'testnet' ? 'Sepolia' : 'Ethereum'}`} value={amount} onChange={setAmount} balance={fmtUnits(l1.bal ?? null, l1.dec, 2)} unit="USDC" />
-      {units !== null && units < min && <p className="mt-2 text-xs text-accent">Use at least 5 USDC (perps minimum).</p>}
-      <button className="btn-primary mt-4 w-full" disabled={!units || units < min || tx.busy || (l1.bal !== undefined && units > l1.bal)} onClick={() => void go()}>{tx.busy ? 'Working…' : 'Approve & deposit'}</button>
+      <h2 className="mb-1 text-xl font-semibold">BNB → Perps</h2>
+      <p className="mb-4 text-sm text-muted">Perps margin is USDT on BNB Chain. Your wallet deposits it directly: no bridge, gas in BNB.</p>
+      <div className="mb-3 grid grid-cols-2 gap-1 rounded-xl bg-bg p-1 text-sm">
+        {(['USDT', 'USDC'] as const).map((t) => (
+          <button key={t} onClick={() => { setPay(t); setAmount(''); }} className={clsx('rounded-lg py-2', pay === t ? 'bg-panel2 text-white' : 'text-muted hover:text-white')}>Pay with {t}</button>
+        ))}
+      </div>
+      <AmountBox label={`${pay} on BNB Chain`} value={amount} onChange={setAmount} balance={fmtUnits(bal, 18, 2)} unit={pay} />
+      <div className="my-2 flex justify-center"><ArrowDown className="text-muted" /></div>
+      <div className="rounded-2xl bg-bg p-4 text-sm">
+        <div className="text-xs text-muted">To</div><div className="mt-1">Your perps account (margin, USDT)</div>
+        <div className="mt-2 text-xs text-muted">Now: {perps.data?.state === 'ok' ? `${(perps.data.walletBalance ?? 0).toFixed(2)} USDT` : perps.data?.state === 'no_deposit' ? 'no deposit yet' : perps.data?.state === 'needs_agent' ? 'register the perps agent to read it' : '—'}</div>
+        {pay === 'USDC' && <div className="mt-2 text-xs text-muted">USDC is swapped to USDT on PancakeSwap first (0.01% pool, at most 0.3% slippage), then the USDT you receive is deposited.</div>}
+      </div>
+      {tooSmall && <p className="mt-2 text-xs text-accent">Deposit at least 5 USDT (the perps minimum order is $5).</p>}
+      <button className="btn-primary mt-4 w-full" disabled={!units || tooSmall || tooBig || tx.busy} onClick={() => void go()}>{tx.busy ? 'Working…' : pay === 'USDC' ? 'Swap & deposit' : 'Approve & deposit'}</button>
       <Logs logs={tx.logs} />
+      <p className="mt-4 text-[11px] text-muted">Approvals are for the exact amount. The deposit goes from your own wallet to the perps vault on BNB Chain; only you can withdraw it.</p>
     </div>
   );
 }
@@ -252,16 +317,10 @@ function DeriveDirect() {
 function TestnetFaucets() {
   const { address } = useAccount();
   const tx = useTxRunner();
-  const [msg, setMsg] = useState<string | null>(null);
   return (
     <div className="mt-3 border-t border-line px-2 pt-3 text-xs">
-      <div className="mb-2 text-muted">Testnet faucets (need Sepolia ETH for gas)</div>
-      <button className="btn-ghost mb-2 w-full py-2 text-xs" disabled={!address} onClick={async () => {
-        const r: { code?: number; message?: string } = await getJson<{ code?: number; message?: string }>(`/api/lighter/faucet?network=testnet&l1_address=${address}`).catch((e: Error) => ({ message: e.message }));
-        setMsg(`Perps faucet: ${r.message ?? r.code ?? 'requested'}`);
-      }}>Perps testnet funds</button>
+      <div className="mb-2 text-muted">Testnet faucet (needs Sepolia ETH for gas). Perps has no testnet deposits.</div>
       <button className="btn-ghost w-full py-2 text-xs" disabled={!address || tx.busy} onClick={() => void tx.run(() => tx.call(11155111, 'Mint 1,000 options mock USDC', DERIVE.testnet.usdc, MOCK_MINT_ABI, 'mint', [address, 1_000_000_000n]))}>Mint options mock USDC</button>
-      {msg && <div className="mt-2 text-muted">{msg}</div>}
       <Logs logs={tx.logs} />
     </div>
   );

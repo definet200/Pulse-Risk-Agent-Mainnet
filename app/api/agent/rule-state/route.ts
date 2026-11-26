@@ -16,7 +16,7 @@ export async function POST(req: Request) {
   return withWallet(async (wallet) => {
     const b = (await req.json().catch(() => ({}))) as { network?: string; ruleKey?: string; action?: string };
     const n = netParam(b.network);
-    if (!n || !b.ruleKey || !/^(lighter|derive):\d{0,24}$/.test(b.ruleKey) || b.action !== 'rearm') return json({ error: 'network, ruleKey, action=rearm required' }, 400);
+    if (!n || !b.ruleKey || !/^(aster|lighter|derive):\d{0,24}$/.test(b.ruleKey) || b.action !== 'rearm') return json({ error: 'network, ruleKey, action=rearm required' }, 400);
     return json({ state: mergeRuleState(wallet, n, b.ruleKey, { topUpDoneAt: null, releaseDoneAt: null }) });
   });
 }
