@@ -4,7 +4,7 @@ import { payoffForChoice, type Payoff } from '../risk/payoff';
 import { buildGraph } from '../graph';
 import { clearQuarantine, setTextFetcher } from '../news';
 import { installSampleFeeds } from '../sample';
-import { memoryActions, setActionsBackend, setEventSink } from '../tools/appApi';
+import { memoryActions, setActionsBackend, setEventSink, type ActionPost } from '../tools/appApi';
 import { closeStore, openStore } from '../tools/store';
 import type { Snapshot } from '../types';
 
@@ -19,6 +19,8 @@ export interface WhatIfResult {
   payoff?: Payoff | null;
   /** Every venue considered for the hedge, with why it was or was not used. */
   alternatives?: VenueAlternative[];
+  /** The exact request the live agent would post for this run (same slot and idempotency key), so the chat can raise it for Approve. Null when nothing is proposed. */
+  request?: ActionPost | null;
 }
 export interface NewsItem { ticker: string; title: string; source: string; hoursAgo: number }
 
@@ -55,7 +57,8 @@ export function runWhatIf(snapshot: Snapshot, opts: { news?: NewsItem[] } = {}):
       } else decision = out.outcome === 'error' ? `Paused: ${out.note}` : 'No action';
       const row = inbox.rows[0];
       const reasons = [...out.rejected.map((r) => r.reason), ...(out.note ? [out.note] : [])].filter((x, i, a) => x && a.indexOf(x) === i).slice(0, 8);
-      return { decision, outcome: out.outcome, reasons, events: events.slice(0, 8), card: row ? { title: row.title, why: row.why, helps: row.helps, willDo: row.willDo, plan: (row.plan as Record<string, unknown> | null) ?? null } : null, payoff: payoffForChoice(s, c), alternatives: alternativesFor(s, c) };
+      return { decision, outcome: out.outcome, reasons, events: events.slice(0, 8), card: row ? { title: row.title, why: row.why, helps: row.helps, willDo: row.willDo, plan: (row.plan as Record<string, unknown> | null) ?? null } : null, payoff: payoffForChoice(s, c), alternatives: alternativesFor(s, c),
+        request: row ? { wallet: row.wallet, network: row.network, kind: row.kind, venue: row.venue, origin: row.origin, slot: row.slot, title: row.title, why: row.why, helps: row.helps, willDo: row.willDo, detail: row.detail, plan: row.plan ?? undefined, payoff: row.payoff ?? undefined, alternatives: row.alternatives ?? undefined, idempotencyKey: row.key } as ActionPost : null };
     } finally { closeStore(); setEventSink(null); if (news.length) { setTextFetcher(); clearQuarantine(); } }
   });
 }
