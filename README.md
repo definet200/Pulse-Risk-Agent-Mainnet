@@ -14,6 +14,7 @@ An agent hedges the bStocks and moves margin from BNB to the perp/options venues
 npm install
 cp .env.example .env.local     # fill SESSION_SECRET, KEYSTORE_SECRET, AGENT_API_TOKEN (openssl rand -hex 32)
 npm run dev                    # http://localhost:3100
+npm run dev:all                # app + agent chat (3200) + agent loop, one terminal (needs agent/.env, see agent/.env.example)
 npm test                       # unit tests (planning math, signing codecs, keystore, Lighter WASM signer)
 npm run build
 ```
