@@ -1,7 +1,9 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import clsx from 'clsx';
-import { Check, ChevronDown, Send, Trash2, X } from 'lucide-react';
+import { usePathname, useRouter } from 'next/navigation';
+import { Check, ChevronDown, Send, Trash2, Wallet, X } from 'lucide-react';
+import { PORTFOLIO_HASH, scrollToPortfolio } from '@/lib/portfolio-link';
 import { getJson } from '@/lib/hooks/useVenues';
 import { HedgeCard, Markdown, type CardScenario } from './HedgeCard';
 import { PayoffChart, type PayoffData } from './PayoffChart';
@@ -46,6 +48,28 @@ export function ChatWidget() {
     document.body.style.userSelect = 'none';
     window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
   };
+  // The whole widget (button and window) can be dragged anywhere so it never sits on top of what the user is reading. Drag the button or the window
+  // header; a plain click still opens and closes. The spot is remembered, and kept on screen.
+  const [pos, setPos] = useState({ x: 0, y: 0 }); const rootRef = useRef<HTMLDivElement>(null); const dragged = useRef(false);
+  useEffect(() => { try { const v = JSON.parse(localStorage.getItem('pulse-chat-pos') ?? 'null') as { x?: number; y?: number } | null; if (typeof v?.x === 'number' && typeof v?.y === 'number') setPos({ x: v.x, y: v.y }); } catch { /* no saved spot */ } }, []);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => { const r = rootRef.current?.getBoundingClientRect(); if (!r) return;
+      const dx = r.left < 8 ? 8 - r.left : r.right > window.innerWidth - 8 ? window.innerWidth - 8 - r.right : 0; const dy = r.top < 8 ? 8 - r.top : r.bottom > window.innerHeight - 8 ? window.innerHeight - 8 - r.bottom : 0;
+      if (dx || dy) setPos((p) => ({ x: p.x + dx, y: p.y + dy })); });
+    return () => cancelAnimationFrame(id);
+  }, [open, size.w, size.h]);
+  const startDrag = (e: React.PointerEvent) => {
+    if (e.button !== 0 || !rootRef.current) return;
+    const sx = e.clientX, sy = e.clientY, start = pos, r = rootRef.current.getBoundingClientRect(); let last = start; dragged.current = false;
+    const move = (ev: PointerEvent) => {
+      const dx = ev.clientX - sx, dy = ev.clientY - sy; if (!dragged.current && Math.hypot(dx, dy) < 4) return; dragged.current = true;
+      last = { x: Math.min(Math.max(start.x + dx, start.x - r.left + 8), start.x + window.innerWidth - 8 - r.right), y: Math.min(Math.max(start.y + dy, start.y - r.top + 8), start.y + window.innerHeight - 8 - r.bottom) }; setPos(last);
+    };
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); document.body.style.userSelect = ''; if (dragged.current) { try { localStorage.setItem('pulse-chat-pos', JSON.stringify(last)); } catch { /* ignore */ } } };
+    document.body.style.userSelect = 'none'; window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
+  };
+  const router = useRouter(); const pathname = usePathname();
+  const viewPortfolio = () => { setOpen(false); if (pathname === '/') scrollToPortfolio(); else router.push(`/${PORTFOLIO_HASH}`); };
   // Bumped by Clear chat, so a reply still in flight from the old conversation is dropped, not appended.
   const generation = useRef(0);
   const clearChat = () => { generation.current++; setMsgs([]); setText(''); setBusy(false); setDeciding(null); };
@@ -72,14 +96,14 @@ export function ChatWidget() {
   }
 
   return (
-    <div className="fixed bottom-20 right-4 z-50 flex flex-col items-end gap-2">
+    <div ref={rootRef} style={{ transform: `translate(${pos.x}px, ${pos.y}px)` }} className="fixed bottom-20 right-4 z-50 flex flex-col items-end gap-2">
       {open && (
-        <div role="dialog" aria-label="Hedge agent chat" style={{ width: size.w, height: size.h }} className="relative flex max-h-[calc(100vh-6rem)] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border border-line bg-[#07090d] shadow-[0_0_60px_rgba(240,185,11,0.10),0_20px_60px_-10px_rgba(0,0,0,0.8)]">
+        <div role="dialog" aria-label="Hedge agent chat" style={{ width: size.w, height: size.h }} className="relative flex max-h-[calc(100vh-6rem)] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border border-line bg-[#07090d] shadow-[0_20px_60px_-10px_rgba(0,0,0,0.9)]">
           {/* Drag the top-left corner (or the left / top edge) to resize; the window stays anchored bottom-right. Double-click resets. */}
           <div aria-hidden onPointerDown={startResize('both')} onDoubleClick={resetSize} title="Drag to resize · double-click to reset" className="absolute left-0 top-0 z-10 h-4 w-4 cursor-nwse-resize rounded-br border-b border-r border-line/60 bg-line/30 hover:bg-accent/40" />
           <div aria-hidden onPointerDown={startResize('w')} onDoubleClick={resetSize} className="absolute bottom-4 left-0 top-4 z-10 w-1.5 cursor-ew-resize hover:bg-accent/30" />
           <div aria-hidden onPointerDown={startResize('h')} onDoubleClick={resetSize} className="absolute left-4 right-0 top-0 z-10 h-1.5 cursor-ns-resize hover:bg-accent/30" />
-          <div className="flex items-center justify-between border-b border-dashed border-line bg-[radial-gradient(ellipse_at_top_left,rgba(240,185,11,0.08),transparent_60%)] px-4 py-3">
+          <div onPointerDown={(e) => { if (!(e.target as HTMLElement).closest('button')) startDrag(e); }} title="Drag to move" className="flex cursor-grab touch-none items-center justify-between border-b border-dashed border-line bg-[#0a0d12] px-4 py-3 active:cursor-grabbing">
             <div className="flex min-w-0 items-center gap-2.5">
               <LogoMark size={26} />
               <div className="min-w-0">
@@ -131,7 +155,7 @@ export function ChatWidget() {
                       {p.alternatives?.length ? <div className="mt-1.5"><VenueAlternatives alts={p.alternatives} /></div> : null}
                       <details className="mt-1 text-muted"><summary className="cursor-pointer">Why and what runs</summary><p className="mt-1">{p.why}</p><ol className="mt-1 list-decimal pl-4">{p.willDo.map((x) => <li key={x}>{x}</li>)}</ol></details>
                       {m.decided?.[p.id]
-                        ? <div className="mt-2 flex items-center gap-1 text-up"><Check size={13} />{m.decided[p.id]}</div>
+                        ? <div className="mt-2 flex flex-wrap items-center justify-between gap-2"><div className="flex items-center gap-1 text-up"><Check size={13} />{m.decided[p.id]}</div>{m.decided[p.id].startsWith('Approved') && <button type="button" onClick={viewPortfolio} className="flex items-center gap-1.5 rounded-full border border-accent/60 bg-accent/10 px-3 py-1 font-mono text-[11px] font-semibold text-accent transition hover:bg-accent/20"><Wallet size={12} />view portfolio</button>}</div>
                         : <div className="mt-2 flex gap-2">
                             <button type="button" disabled={deciding === p.id} onClick={() => void decide(i, p.id, 'approve')} className="flex-1 rounded-full border border-up bg-up/20 py-1.5 text-sm font-semibold text-up">{deciding === p.id ? '...' : 'Approve'}</button>
                             <button type="button" disabled={deciding === p.id} onClick={() => void decide(i, p.id, 'reject')} className="flex-1 rounded-full border border-down/60 py-1.5 text-sm font-semibold text-down">{deciding === p.id ? '...' : 'Reject'}</button>
@@ -160,8 +184,8 @@ export function ChatWidget() {
           </form>
         </div>
       )}
-      <button type="button" aria-label={open ? 'Close hedge agent chat' : 'Open hedge agent chat'} aria-expanded={open} onClick={() => setOpen((o) => !o)}
-        className={clsx('group flex items-center gap-2 rounded-full border py-1.5 pl-1.5 pr-3.5 text-sm font-semibold shadow-[0_8px_30px_rgba(240,185,11,0.25)] transition', open ? 'border-line bg-[#07090d] text-white' : 'border-accent/60 bg-[#07090d] text-white hover:border-accent')}>
+      <button type="button" aria-label={open ? 'Close hedge agent chat' : 'Open hedge agent chat'} aria-expanded={open} onPointerDown={startDrag} title="Click to open · drag to move" onClick={() => { if (dragged.current) { dragged.current = false; return; } setOpen((o) => !o); }}
+        className={clsx('group flex cursor-grab touch-none items-center gap-2 rounded-full border border-line bg-[#07090d] py-1.5 pl-1.5 pr-3.5 text-sm font-semibold text-white shadow-[0_6px_24px_rgba(0,0,0,0.7)] transition active:cursor-grabbing hover:border-white/25')}>
         <span className="relative"><LogoMark size={26} />{!open && <span className="absolute -right-0.5 -top-0.5 h-2 w-2 animate-pulse rounded-full bg-up ring-2 ring-[#07090d]" />}</span>
         <span className="font-mono">ask pulse</span><ChevronDown size={15} className={clsx('text-muted transition-transform', !open && 'rotate-180')} />
       </button>
